@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Home, Receipt, ScanLine, Wallet, Scale } from 'lucide-react-native';
+import { Home, Receipt, ScanLine, Wallet, Scale, Target } from 'lucide-react-native';
 import { colors } from '@/lib/theme';
 
 export default function TabLayout() {
@@ -50,6 +50,13 @@ export default function TabLayout() {
         options={{
           title: 'Cuentas',
           tabBarIcon: ({ color, size }) => <Wallet color={color} size={size} strokeWidth={2} />,
+        }}
+      />
+      <Tabs.Screen
+        name="metas"
+        options={{
+          title: 'Metas',
+          tabBarIcon: ({ color, size }) => <Target color={color} size={size} strokeWidth={2} />,
         }}
       />
       <Tabs.Screen

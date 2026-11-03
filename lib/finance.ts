@@ -1,6 +1,18 @@
 import { Platform } from 'react-native';
 import { DANIEL_ID, ANA_ID } from './people';
-import type { Account, AccountTransaction, Assignment, Expense, ExpenseItem, Settlement, SplitType } from './types';
+import type {
+  Account,
+  AccountTransaction,
+  Assignment,
+  Expense,
+  ExpenseItem,
+  Goal,
+  GoalProjection,
+  MonthCloseSummary,
+  RecurringExpense,
+  Settlement,
+  SplitType,
+} from './types';
 
 const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:8000';
 const APP_TOKEN = process.env.EXPO_PUBLIC_APP_TOKEN;
@@ -27,6 +39,7 @@ export function computeShare(
   splitType: SplitType,
   items: ExpenseItem[] | undefined,
   paidByPersonId: string,
+  danielPct = 50,
 ): { danielShare: number; anaShare: number } {
   if (items?.length && splitType === 'by_items') {
     let daniel = 0;
@@ -50,6 +63,11 @@ export function computeShare(
   }
   if (splitType === 'all_daniel') return { danielShare: total, anaShare: 0 };
   if (splitType === 'all_ana') return { danielShare: 0, anaShare: total };
+  if (splitType === 'proportional') {
+    const pct = Math.max(0, Math.min(100, danielPct));
+    const danielShare = Math.round((total * pct) / 100);
+    return { danielShare, anaShare: total - danielShare };
+  }
   const anaShare = Math.floor(total / 2);
   return { danielShare: total - anaShare, anaShare };
 }
@@ -87,6 +105,7 @@ export interface SaveExpenseInput {
   paidByPersonId: string;
   accountId: string | null;
   splitType: SplitType;
+  danielPct?: number;
   surchargeApplied: boolean;
   surchargeAmount: number;
   alreadyPaid: boolean;
@@ -113,6 +132,93 @@ export async function deleteExpense(expenseId: string): Promise<void> {
 export async function parseExpensesText(text: string): Promise<{ description: string; amount: number; category?: string }[]> {
   const data = await apiPost<{ items: { description: string; amount: number; category?: string }[] }>('/api/expenses/parse-text', { text });
   return data.items ?? [];
+}
+
+export interface ParsedVoiceCommand {
+  title: string;
+  totalAmount: number;
+  paidBy: 'silvia' | 'daniel' | null;
+  splitType: SplitType | null;
+  bankHint: 'nequi' | 'nu_credito' | 'nu_ahorros' | null;
+  items: { description: string; amount: number; category?: string }[];
+}
+
+export async function parseVoiceCommand(text: string): Promise<ParsedVoiceCommand> {
+  return apiPost<ParsedVoiceCommand>('/api/expenses/parse-voice-command', { text });
+}
+
+export async function fetchRecurringExpenses(): Promise<RecurringExpense[]> {
+  const data = await apiGet<{ recurring: RecurringExpense[] }>('/api/recurring');
+  return data.recurring ?? [];
+}
+
+export async function createRecurringExpense(input: {
+  title: string;
+  amount: number;
+  dayOfMonth: number;
+  paidByPersonId: string;
+  splitType: SplitType;
+  danielPct?: number;
+  category?: string;
+}): Promise<RecurringExpense> {
+  const data = await apiPost<{ recurring: RecurringExpense }>('/api/recurring', input);
+  return data.recurring;
+}
+
+export async function deleteRecurringExpense(id: number): Promise<void> {
+  await apiDelete(`/api/recurring/${id}`);
+}
+
+export async function applyRecurringExpense(id: number, accountId?: string | null): Promise<void> {
+  await apiPost(`/api/recurring/${id}/apply`, { accountId: accountId ?? null });
+  invalidateBootstrap();
+}
+
+export async function fetchGoals(): Promise<Goal[]> {
+  const data = await apiGet<{ goals: Goal[] }>('/api/goals');
+  return data.goals ?? [];
+}
+
+export async function createGoal(input: {
+  name: string;
+  target_amount: number;
+  frequency?: string;
+  deadline?: string | null;
+  current_saved?: number;
+  notes?: string | null;
+}): Promise<Goal> {
+  const data = await apiPost<{ goal: Goal }>('/api/goals', input);
+  return data.goal;
+}
+
+export async function updateGoal(
+  goalId: number,
+  input: Partial<{
+    name: string;
+    target_amount: number;
+    frequency: string;
+    deadline: string | null;
+    current_saved: number;
+    notes: string | null;
+  }>,
+): Promise<Goal> {
+  const data = await apiPut<{ goal: Goal }>(`/api/goals/${goalId}`, input);
+  return data.goal;
+}
+
+export async function deleteGoal(goalId: number): Promise<void> {
+  await apiDelete(`/api/goals/${goalId}`);
+}
+
+export async function fetchGoalProjection(goalId: number, monthlySaving: number): Promise<GoalProjection> {
+  const data = await apiGet<{ projection: GoalProjection }>(`/api/goals/${goalId}/projection?monthly_saving=${monthlySaving}`);
+  return data.projection;
+}
+
+export async function fetchMonthClose(year?: number, month?: number): Promise<MonthCloseSummary> {
+  const query = year && month ? `?year=${year}&month=${month}` : '';
+  const data = await apiGet<{ summary: MonthCloseSummary }>(`/api/month-close${query}`);
+  return data.summary;
 }
 
 export async function createAccount(input: {
@@ -170,6 +276,7 @@ export async function saveSettlement(input: {
   toPersonId: string;
   amount: number;
   accountId: string | null;
+  toAccountId?: string | null;
   date: string;
   note: string | null;
 }): Promise<Settlement> {

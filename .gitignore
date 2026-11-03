@@ -37,3 +37,5 @@ yarn-error.*
 # python
 __pycache__/
 *.py[cod]
+
+backend/cuentas_claras_local.json

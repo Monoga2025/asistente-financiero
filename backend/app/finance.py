@@ -12,11 +12,20 @@ def split_equal(amount: int) -> dict[str, int]:
     return {"share_ana": ana, "share_daniel": amount - ana}
 
 
-def compute_shares(total_amount: int, split_type: str, items: list[dict[str, Any]] | None = None) -> dict[str, int]:
+def compute_shares(
+    total_amount: int,
+    split_type: str,
+    items: list[dict[str, Any]] | None = None,
+    daniel_pct: int | None = None,
+) -> dict[str, int]:
     if split_type in {"full_daniel", "all_daniel"}:
         return {"share_ana": 0, "share_daniel": total_amount}
-    if split_type in {"full_ana", "all_ana"}:
+    if split_type in {"full_ana", "all_ana", "all_silvia"}:
         return {"share_ana": total_amount, "share_daniel": 0}
+    if split_type == "proportional" and daniel_pct is not None:
+        pct = max(0, min(100, int(daniel_pct)))
+        share_daniel = round(total_amount * pct / 100)
+        return {"share_ana": total_amount - share_daniel, "share_daniel": share_daniel}
 
     if split_type in {"items", "by_items"} and items:
         share_ana = 0
@@ -24,7 +33,7 @@ def compute_shares(total_amount: int, split_type: str, items: list[dict[str, Any
         for item in items:
             amount = int(item.get("amount") or 0)
             assigned = item.get("assigned_to") or item.get("assignedTo")
-            if assigned == ANA:
+            if assigned in {ANA, "silvia"}:
                 share_ana += amount
             elif assigned == DANIEL:
                 share_daniel += amount
@@ -39,6 +48,11 @@ def compute_shares(total_amount: int, split_type: str, items: list[dict[str, Any
             share_ana += split["share_ana"]
             share_daniel += split["share_daniel"]
         return {"share_ana": share_ana, "share_daniel": share_daniel}
+
+    if daniel_pct is not None and 0 <= int(daniel_pct) <= 100 and int(daniel_pct) != 50:
+        pct = int(daniel_pct)
+        share_daniel = round(total_amount * pct / 100)
+        return {"share_ana": total_amount - share_daniel, "share_daniel": share_daniel}
 
     return split_equal(total_amount)
 
@@ -55,7 +69,7 @@ def compute_balance(expenses: list[dict[str, Any]], settlements: list[dict[str, 
         delta = 0
         if paid_by == DANIEL:
             delta = share_ana
-        elif paid_by == ANA:
+        elif paid_by in {ANA, "silvia"}:
             delta = -share_daniel
 
         net += delta
@@ -75,9 +89,9 @@ def compute_balance(expenses: list[dict[str, Any]], settlements: list[dict[str, 
         from_person = settlement.get("from_person") or settlement.get("fromPerson")
         to_person = settlement.get("to_person") or settlement.get("toPerson")
         amount = int(settlement.get("amount") or 0)
-        if from_person == ANA and to_person == DANIEL:
+        if from_person in {ANA, "silvia"} and to_person == DANIEL:
             net -= amount
-        elif from_person == DANIEL and to_person == ANA:
+        elif from_person == DANIEL and to_person in {ANA, "silvia"}:
             net += amount
 
     if net > 0:

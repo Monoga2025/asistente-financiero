@@ -22,6 +22,14 @@ def _use_local_store() -> bool:
     return not url or url.lower() in {"local", "sqlite", "json"}
 
 
+def _default_recurring() -> list[dict[str, Any]]:
+    return [
+        {"id": 1, "title": "Arriendo", "amount": 1000000, "day_of_month": 1, "paid_by_person_id": 2, "split_type": "half", "daniel_pct": 50, "category": "Vivienda"},
+        {"id": 2, "title": "Internet Hogar", "amount": 95000, "day_of_month": 5, "paid_by_person_id": 2, "split_type": "half", "daniel_pct": 50, "category": "Vivienda"},
+        {"id": 3, "title": "Servicios Públicos (Luz y Agua)", "amount": 180000, "day_of_month": 15, "paid_by_person_id": 1, "split_type": "half", "daniel_pct": 50, "category": "Vivienda"},
+    ]
+
+
 def _default_local_state() -> dict[str, Any]:
     return {
         "people": [
@@ -42,6 +50,7 @@ def _default_local_state() -> dict[str, Any]:
         "receipt_drafts": [],
         "receipt_blobs": [],
         "goals": [],
+        "recurring_expenses": _default_recurring(),
     }
 
 
@@ -51,7 +60,11 @@ def _load_local() -> dict[str, Any]:
         _save_local(state)
         return state
     try:
-        return json.loads(LOCAL_STORE_PATH.read_text(encoding="utf-8"))
+        state = json.loads(LOCAL_STORE_PATH.read_text(encoding="utf-8"))
+        if "recurring_expenses" not in state:
+            state["recurring_expenses"] = _default_recurring()
+            _save_local(state)
+        return state
     except Exception:
         state = _default_local_state()
         _save_local(state)
@@ -641,6 +654,8 @@ def save_expense(payload: dict[str, Any]) -> dict[str, Any]:
     surcharge_amount = round(float(payload.get("surchargeAmount") or payload.get("surcharge_amount") or 0))
     already_paid = bool(payload.get("alreadyPaid") or payload.get("already_paid"))
     source = "receipt" if payload.get("source") == "scan" else str(payload.get("source") or "manual")
+    daniel_pct_raw = payload.get("danielPct") if "danielPct" in payload else payload.get("daniel_pct")
+    daniel_pct = int(daniel_pct_raw) if daniel_pct_raw is not None else None
 
     items = []
     for item in payload.get("items") or []:
@@ -661,9 +676,15 @@ def save_expense(payload: dict[str, Any]) -> dict[str, Any]:
         "all_daniel": "full_daniel",
         "all_ana": "full_ana",
         "all_silvia": "full_ana",
+        "proportional": "equal",
     }.get(split_type, split_type)
     share_items = [{"amount": item["amount"], "assigned_to": item["assigned_to"]} for item in items]
-    shares = compute_shares(total_amount, db_split_type, share_items)
+    shares = compute_shares(
+        total_amount,
+        "proportional" if split_type == "proportional" else db_split_type,
+        share_items,
+        daniel_pct=daniel_pct,
+    )
 
     if _use_local_store():
         state = _load_local()
@@ -875,7 +896,10 @@ def save_settlement(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Monto invalido.")
     account_id = payload.get("accountId") or payload.get("account_id")
     account_id = int(account_id) if account_id else None
+    to_account_id = payload.get("toAccountId") or payload.get("to_account_id")
+    to_account_id = int(to_account_id) if to_account_id else None
     settlement_date = str(payload.get("date") or datetime.now(UTC).date().isoformat())
+    desc = str(payload.get("note") or "Pago entre Silvia y Daniel").strip()
 
     if _use_local_store():
         state = _load_local()
@@ -887,6 +911,7 @@ def save_settlement(payload: dict[str, Any]) -> dict[str, Any]:
                 "to_person_id": int(payload.get("toPersonId") or payload.get("to_person_id")),
                 "amount": amount,
                 "from_account_id": account_id,
+                "to_account_id": to_account_id,
                 "date": settlement_date,
                 "note": payload.get("note"),
                 "created_at": datetime.now(UTC).isoformat(),
@@ -903,7 +928,24 @@ def save_settlement(payload: dict[str, Any]) -> dict[str, Any]:
                     "account_id": account_id,
                     "type": "payment",
                     "amount": -amount,
-                    "description": payload.get("note") or "Pago entre Silvia y Daniel",
+                    "description": desc,
+                    "date": settlement_date,
+                    "related_expense_id": None,
+                    "created_at": datetime.now(UTC).isoformat(),
+                }
+            )
+        if to_account_id:
+            to_acc = next((a for a in state["accounts"] if int(a["id"]) == int(to_account_id)), None)
+            if to_acc:
+                delta = account_delta(str(to_acc.get("kind")), "income", amount)
+                to_acc["balance"] = int(to_acc.get("balance") or 0) + delta
+            state["account_transactions"].append(
+                {
+                    "id": _next_id(state["account_transactions"]),
+                    "account_id": to_account_id,
+                    "type": "income",
+                    "amount": amount,
+                    "description": f"Abono recibido: {desc}",
                     "date": settlement_date,
                     "related_expense_id": None,
                     "created_at": datetime.now(UTC).isoformat(),
@@ -914,8 +956,8 @@ def save_settlement(payload: dict[str, Any]) -> dict[str, Any]:
 
     inserted = execute_returning(
         """
-        insert into settlements (from_person_id, to_person_id, amount, from_account_id, date, note)
-        values (%s, %s, %s, %s, %s, %s)
+        insert into settlements (from_person_id, to_person_id, amount, from_account_id, to_account_id, date, note)
+        values (%s, %s, %s, %s, %s, %s, %s)
         returning *
         """,
         (
@@ -923,6 +965,7 @@ def save_settlement(payload: dict[str, Any]) -> dict[str, Any]:
             int(payload.get("toPersonId") or payload.get("to_person_id")),
             amount,
             account_id,
+            to_account_id,
             settlement_date,
             payload.get("note"),
         ),
@@ -935,10 +978,98 @@ def save_settlement(payload: dict[str, Any]) -> dict[str, Any]:
             insert into account_transactions (account_id, type, amount, description, date)
             values (%s, 'payment', %s, %s, %s)
             """,
-            (account_id, -amount, payload.get("note") or "Pago entre Silvia y Daniel", settlement_date),
+            (account_id, -amount, desc, settlement_date),
+        )
+    if to_account_id:
+        update_account_for_transaction(None, to_account_id, "income", amount)
+        execute_write(
+            """
+            insert into account_transactions (account_id, type, amount, description, date)
+            values (%s, 'income', %s, %s, %s)
+            """,
+            (to_account_id, amount, f"Abono recibido: {desc}", settlement_date),
         )
 
     return {"settlementId": inserted["id"], "amount": amount}
+
+
+def list_recurring_expenses() -> list[dict[str, Any]]:
+    if _use_local_store():
+        return list(_load_local().get("recurring_expenses", []))
+    return fetch_all("select * from recurring_expenses order by day_of_month, id")
+
+
+def create_recurring_expense(payload: dict[str, Any]) -> dict[str, Any]:
+    title = str(payload.get("title") or "").strip()
+    if not title:
+        raise ValueError("El gasto fijo necesita un nombre.")
+    amount = round(float(payload.get("amount") or 0))
+    if amount <= 0:
+        raise ValueError("El monto debe ser mayor que cero.")
+    day_of_month = max(1, min(31, int(payload.get("dayOfMonth") or payload.get("day_of_month") or 1)))
+    paid_by_person_id = int(payload.get("paidByPersonId") or payload.get("paid_by_person_id") or 2)
+    split_type = str(payload.get("splitType") or payload.get("split_type") or "half")
+    daniel_pct = max(0, min(100, int(payload.get("danielPct") if "danielPct" in payload else payload.get("daniel_pct", 50))))
+    category = str(payload.get("category") or "Vivienda")
+
+    if _use_local_store():
+        state = _load_local()
+        rec = {
+            "id": _next_id(state.get("recurring_expenses", [])),
+            "title": title,
+            "amount": amount,
+            "day_of_month": day_of_month,
+            "paid_by_person_id": paid_by_person_id,
+            "split_type": split_type,
+            "daniel_pct": daniel_pct,
+            "category": category,
+        }
+        state.setdefault("recurring_expenses", []).append(rec)
+        _save_local(state)
+        return rec
+
+    return execute_returning(
+        """
+        insert into recurring_expenses (title, amount, day_of_month, paid_by_person_id, split_type, daniel_pct, category)
+        values (%s, %s, %s, %s, %s, %s, %s)
+        returning *
+        """,
+        (title, amount, day_of_month, paid_by_person_id, split_type, daniel_pct, category),
+    )
+
+
+def delete_recurring_expense(recurring_id: int) -> bool:
+    if _use_local_store():
+        state = _load_local()
+        before = len(state.get("recurring_expenses", []))
+        state["recurring_expenses"] = [r for r in state.get("recurring_expenses", []) if int(r["id"]) != int(recurring_id)]
+        _save_local(state)
+        return len(state["recurring_expenses"]) < before
+    return fetch_one_write("delete from recurring_expenses where id = %s returning id", (recurring_id,)) is not None
+
+
+def apply_recurring_expense(recurring_id: int, account_id: int | None = None) -> dict[str, Any]:
+    if _use_local_store():
+        state = _load_local()
+        rec = next((r for r in state.get("recurring_expenses", []) if int(r["id"]) == int(recurring_id)), None)
+    else:
+        rec = fetch_one("select * from recurring_expenses where id = %s", (recurring_id,))
+    if not rec:
+        raise ValueError("Gasto fijo no encontrado.")
+
+    return save_expense(
+        {
+            "title": rec["title"],
+            "totalAmount": rec["amount"],
+            "expenseDate": datetime.now(UTC).date().isoformat(),
+            "paidByPersonId": rec["paid_by_person_id"],
+            "accountId": account_id,
+            "splitType": rec.get("split_type") or "half",
+            "danielPct": rec.get("daniel_pct", 50),
+            "note": f"Gasto fijo mensual (día {rec.get('day_of_month', 1)})",
+            "source": "manual",
+        }
+    )
 
 
 GOAL_FREQUENCIES = {"una_vez", "semanal", "mensual", "anual"}

@@ -18,33 +18,34 @@ export default function BalanceScreen() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [showSettleModal, setShowSettleModal] = useState(false);
 
+  const loadBalance = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [bal, sets, exps, accs] = await Promise.all([computeBalance(), fetchSettlements(50), fetchExpenses(200), fetchAccounts()]);
+      setBalance(bal);
+      setSettlements(sets);
+      setExpenses(exps);
+      setAccounts(accs);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
-      let active = true;
-      (async () => {
-        setLoading(true);
-        try {
-          const [bal, sets, exps, accs] = await Promise.all([computeBalance(), fetchSettlements(50), fetchExpenses(200), fetchAccounts()]);
-          if (!active) return;
-          setBalance(bal);
-          setSettlements(sets);
-          setExpenses(exps);
-          setAccounts(accs);
-        } catch (e) {
-          console.error(e);
-        } finally {
-          if (active) setLoading(false);
-        }
-      })();
-      return () => { active = false; };
-    }, []),
+      loadBalance();
+    }, [loadBalance]),
   );
 
   const balanceInfo = describeBalance(balance);
 
   // Build per-expense contribution history
   const history = expenses.map((e) => {
-    const { danielShare, anaShare } = computeShare(e.total_amount, e.split_type, e.expense_items, e.paid_by_person_id);
+    const computed = computeShare(e.total_amount, e.split_type, e.expense_items, e.paid_by_person_id);
+    const danielShare = e.share_daniel ?? computed.danielShare;
+    const anaShare = e.share_ana ?? computed.anaShare;
     const delta = balanceDeltaForExpense(e.paid_by_person_id, danielShare, anaShare);
     return {
       id: e.id,
@@ -185,11 +186,9 @@ export default function BalanceScreen() {
         onClose={() => setShowSettleModal(false)}
         balanceInfo={balanceInfo}
         accounts={accounts}
-        onDone={() => {
+        onDone={async () => {
           setShowSettleModal(false);
-          setLoading(true);
-          computeBalance().then(setBalance).finally(() => setLoading(false));
-          fetchSettlements(50).then(setSettlements);
+          await loadBalance();
         }}
       />
     </View>
@@ -201,11 +200,13 @@ function SettleModal({ visible, onClose, balanceInfo, accounts, onDone }: { visi
   const toId = balanceInfo.owesTo === 'Silvia' ? ANA_ID : balanceInfo.owesTo === 'Daniel' ? DANIEL_ID : null;
   const [amount, setAmount] = useState('');
   const [accountId, setAccountId] = useState<string | null>(null);
+  const [toAccountId, setToAccountId] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const payerAccounts = accounts.filter((a) => a.person_id === fromId);
+  const receiverAccounts = accounts.filter((a) => a.person_id === toId);
 
   async function handleSave() {
     if (!fromId || !toId) return;
@@ -219,12 +220,14 @@ function SettleModal({ visible, onClose, balanceInfo, accounts, onDone }: { visi
         toPersonId: toId,
         amount: amt,
         accountId,
+        toAccountId,
         date: toInputDate(new Date()),
         note: note.trim() || null,
       });
       setAmount('');
       setNote('');
       setAccountId(null);
+      setToAccountId(null);
       onDone();
     } catch (e: any) {
       setError(e?.message ?? 'No se pudo guardar el pago');
@@ -280,11 +283,27 @@ function SettleModal({ visible, onClose, balanceInfo, accounts, onDone }: { visi
 
           {payerAccounts.length > 0 && (
             <>
-              <Text style={{ fontFamily: 'Inter-Medium', fontSize: 13, color: colors.textSecondary, marginBottom: spacing.sm }}>Cuenta (opcional)</Text>
+              <Text style={{ fontFamily: 'Inter-Medium', fontSize: 13, color: colors.textSecondary, marginBottom: spacing.xs }}>
+                Cuenta de donde sale ({balanceInfo.owesFrom})
+              </Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.md }}>
                 <Chip label="Sin cuenta" selected={!accountId} onPress={() => setAccountId(null)} />
                 {payerAccounts.map((a) => (
                   <Chip key={a.id} label={a.name} selected={accountId === a.id} onPress={() => setAccountId(a.id)} />
+                ))}
+              </View>
+            </>
+          )}
+
+          {receiverAccounts.length > 0 && (
+            <>
+              <Text style={{ fontFamily: 'Inter-Medium', fontSize: 13, color: colors.textSecondary, marginBottom: spacing.xs }}>
+                Cuenta donde recibe ({balanceInfo.owesTo})
+              </Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.md }}>
+                <Chip label="Sin cuenta" selected={!toAccountId} onPress={() => setToAccountId(null)} />
+                {receiverAccounts.map((a) => (
+                  <Chip key={a.id} label={a.name} selected={toAccountId === a.id} onPress={() => setToAccountId(a.id)} />
                 ))}
               </View>
             </>

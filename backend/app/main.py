@@ -11,19 +11,23 @@ from .auth import require_app_token
 from .categorize import CATEGORIES, categorize_by_rules, categorize_with_ai
 from .db import (
     GOAL_FREQUENCIES,
+    apply_recurring_expense,
     bootstrap,
     confirm_receipt,
     create_account,
     create_goal,
     create_receipt_draft,
+    create_recurring_expense,
     delete_expense,
     delete_goal,
+    delete_recurring_expense,
     get_account_transactions,
     get_expenses_for_month,
     get_goal,
     get_receipt_blob,
     init_database,
     list_goals,
+    list_recurring_expenses,
     record_account_movement,
     save_expense,
     save_settlement,
@@ -31,7 +35,7 @@ from .db import (
     update_goal,
     upload_receipt_image,
 )
-from .expense_text import parse_expenses_text
+from .expense_text import parse_expenses_text, parse_voice_expense_command
 from .goals import month_close_summary, project_goal
 from .receipts import scan_receipt_with_nvidia
 
@@ -78,7 +82,7 @@ def parse_goal_payload(payload: dict[str, Any], partial: bool) -> dict[str, Any]
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Cuentas Claras API", version="1.0.0", lifespan=lifespan)
+    app = FastAPI(title="Cuentas Claras API", version="2.0.0", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -241,6 +245,41 @@ def create_app() -> FastAPI:
         items = [{**item, "category": categorize_by_rules(str(item["description"]))} for item in parse_expenses_text(text)]
         return {"ok": True, "items": items}
 
+    @app.post("/api/expenses/parse-voice-command", dependencies=[Depends(require_app_token)])
+    def parse_voice_command(payload: dict[str, Any]) -> dict[str, Any]:
+        text = str(payload.get("text") or "").strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="Falta el comando de voz o texto.")
+        parsed = parse_voice_expense_command(text)
+        parsed["items"] = [{**item, "category": categorize_by_rules(str(item["description"]))} for item in parsed["items"]]
+        return {"ok": True, **parsed}
+
+    @app.get("/api/recurring", dependencies=[Depends(require_app_token)])
+    def get_recurring() -> dict[str, Any]:
+        return {"ok": True, "recurring": list_recurring_expenses()}
+
+    @app.post("/api/recurring", dependencies=[Depends(require_app_token)])
+    def post_recurring(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return {"ok": True, "recurring": create_recurring_expense(payload)}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.delete("/api/recurring/{recurring_id}", dependencies=[Depends(require_app_token)])
+    def remove_recurring(recurring_id: int) -> dict[str, Any]:
+        if not delete_recurring_expense(recurring_id):
+            raise HTTPException(status_code=404, detail="Gasto fijo no encontrado.")
+        return {"ok": True}
+
+    @app.post("/api/recurring/{recurring_id}/apply", dependencies=[Depends(require_app_token)])
+    def trigger_recurring(recurring_id: int, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        try:
+            acc_id = int(payload["accountId"]) if payload and payload.get("accountId") else None
+            res = apply_recurring_expense(recurring_id, account_id=acc_id)
+            return {"ok": True, **res}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.get("/api/goals", dependencies=[Depends(require_app_token)])
     def get_goals() -> dict[str, Any]:
         return {"ok": True, "goals": list_goals()}
@@ -278,7 +317,7 @@ def create_app() -> FastAPI:
     ) -> dict[str, Any]:
         today = date.today()
         if year is None or month is None:
-            year, month = (today.year - 1, 12) if today.month == 1 else (today.year, today.month - 1)
+            year, month = today.year, today.month
         prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
         summary = month_close_summary(
             get_expenses_for_month(year, month),

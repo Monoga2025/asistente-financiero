@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ActivityIndicator, Image, Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { AlertCircle, Camera, Check, Image as ImageIcon, ScanLine, X } from 'lucide-react-native';
+import { AlertCircle, Camera, Check, Image as ImageIcon, Plus, ScanLine, Trash2, X } from 'lucide-react-native';
 import { Button, Card, Chip } from '@/components/ui';
 import { Header } from '@/components/Header';
 import { colors, radius, shadows, spacing } from '@/lib/theme';
@@ -17,6 +17,7 @@ export default function EscanearScreen() {
   const [phase, setPhase] = useState<Phase>('input');
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [draftId, setDraftId] = useState<number | null>(null);
+  const [aiNote, setAiNote] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const [paidBy, setPaidBy] = useState(DANIEL_ID);
@@ -38,6 +39,7 @@ export default function EscanearScreen() {
     setPhase('input');
     setImageUri(null);
     setDraftId(null);
+    setAiNote(null);
     setErrorMsg(null);
     setSavedMsg(null);
     setPaidBy(DANIEL_ID);
@@ -81,13 +83,15 @@ export default function EscanearScreen() {
       setAccountId(defaultAccount?.id ?? null);
 
       const scanned = await scanReceiptImage(uri);
-      if (scanned.concepts.length === 0) {
-        throw new Error('No se detectaron conceptos en la factura. Intenta con una foto mas clara.');
-      }
       setDraftId(scanned.draftId);
       setStore(scanned.store ?? 'Factura escaneada');
       setDate(toInputDate(new Date()));
-      setConcepts(scanned.concepts);
+      setAiNote(scanned.aiNote);
+      setConcepts(
+        scanned.concepts.length > 0
+          ? scanned.concepts
+          : [{ name: 'Producto 1', amount: 0, assigned_to: 'half' }],
+      );
       setPhase('review');
     } catch (error: any) {
       setErrorMsg(error?.message ?? 'No se pudo escanear la factura.');
@@ -105,10 +109,24 @@ export default function EscanearScreen() {
     setConcepts(concepts.map((concept, i) => (i === index ? { ...concept, [field]: value } : concept)));
   }
 
+  function addConcept() {
+    setConcepts([...concepts, { name: '', amount: 0, assigned_to: 'half' }]);
+  }
+
+  function removeConcept(index: number) {
+    setConcepts(concepts.filter((_, i) => i !== index));
+  }
+
   async function handleSave() {
     setPhase('saving');
     try {
       if (!draftId) throw new Error('Falta el borrador de la factura. Escanea de nuevo.');
+      const validConcepts = concepts.filter((c) => c.name.trim() && c.amount > 0);
+      if (validConcepts.length === 0) {
+        setErrorMsg('Agrega al menos un concepto con monto mayor a cero.');
+        setPhase('review');
+        return;
+      }
       await saveScannedReceipt({
         draftId,
         title: store.trim() || 'Factura escaneada',
@@ -117,8 +135,8 @@ export default function EscanearScreen() {
         accountId,
         addSurcharge: surcharge,
         surchargePercent: 3,
-        items: concepts.map((concept) => ({
-          description: concept.name,
+        items: validConcepts.map((concept) => ({
+          description: concept.name.trim(),
           amount: concept.amount,
           assignedTo: concept.assigned_to === 'half' ? 'equal' : concept.assigned_to,
         })),
@@ -168,6 +186,14 @@ export default function EscanearScreen() {
               </View>
             </View>
 
+            {aiNote && (
+              <View style={{ backgroundColor: colors.warningLight, padding: spacing.md, borderRadius: radius.md }}>
+                <Text style={{ fontFamily: 'Inter-Medium', fontSize: 13, color: colors.warning }}>
+                  Nota: {aiNote} (Puedes anotar o ajustar los productos abajo y la foto quedará guardada con el gasto).
+                </Text>
+              </View>
+            )}
+
             <Card>
               <Label text="Tienda" />
               <TextInput value={store} onChangeText={setStore} placeholder="Factura escaneada" placeholderTextColor={colors.textMuted} style={inputStyle} />
@@ -180,10 +206,13 @@ export default function EscanearScreen() {
               <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 15, color: colors.text, marginBottom: spacing.md }}>Conceptos ({concepts.length})</Text>
               <View style={{ gap: spacing.sm }}>
                 {concepts.map((concept, index) => (
-                  <View key={`${concept.name}-${index}`} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.sm }}>
+                  <View key={`concept-${index}`} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.sm }}>
                     <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'center' }}>
-                      <TextInput value={concept.name} onChangeText={(value) => updateConcept(index, 'name', value)} style={[inputStyle, { flex: 1 }]} />
-                      <TextInput value={formatCOP(concept.amount)} onChangeText={(value) => updateConcept(index, 'amount', parseCOP(value))} keyboardType="numeric" style={[inputStyle, { width: 120, fontFamily: 'Inter-SemiBold' }]} />
+                      <TextInput value={concept.name} onChangeText={(value) => updateConcept(index, 'name', value)} placeholder="Producto" style={[inputStyle, { flex: 1 }]} />
+                      <TextInput value={concept.amount > 0 ? formatCOP(concept.amount) : ''} onChangeText={(value) => updateConcept(index, 'amount', parseCOP(value))} placeholder="$0" keyboardType="numeric" style={[inputStyle, { width: 120, fontFamily: 'Inter-SemiBold' }]} />
+                      <Pressable onPress={() => removeConcept(index)}>
+                        <Trash2 color={colors.error} size={18} strokeWidth={2} />
+                      </Pressable>
                     </View>
                     <View style={{ flexDirection: 'row', gap: 6, marginTop: spacing.sm }}>
                       <Chip label="Silvia" selected={concept.assigned_to === 'ana'} onPress={() => updateConcept(index, 'assigned_to', 'ana')} color={colors.ana} lightColor={colors.anaLight} />
@@ -192,6 +221,13 @@ export default function EscanearScreen() {
                     </View>
                   </View>
                 ))}
+                <Pressable
+                  onPress={addConcept}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, paddingVertical: spacing.sm, borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.emerald, borderRadius: radius.md }}
+                >
+                  <Plus color={colors.emerald} size={18} strokeWidth={2} />
+                  <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 14, color: colors.emerald }}>Agregar producto</Text>
+                </Pressable>
               </View>
             </Card>
 

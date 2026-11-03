@@ -1,12 +1,21 @@
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
-import { Plus, ScanLine, Wallet, Scale } from 'lucide-react-native';
+import { useCallback, useRef, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { AlertTriangle, Mic, MicOff, Plus, ScanLine, Scale, Send, Target, Wallet } from 'lucide-react-native';
 import { Card, PersonBadge, SectionTitle } from '@/components/ui';
 import { colors, radius, shadows, spacing } from '@/lib/theme';
-import { formatCOP, formatDate, monthLabel } from '@/lib/format';
-import { fetchAccounts, fetchExpenses, computeBalance, describeBalance, computeShare } from '@/lib/finance';
-import { PEOPLE } from '@/lib/people';
+import { formatCOP, formatDate, monthLabel, toInputDate } from '@/lib/format';
+import {
+  computeBalance,
+  computeShare,
+  describeBalance,
+  fetchAccounts,
+  fetchExpenses,
+  parseVoiceCommand,
+  saveExpense,
+} from '@/lib/finance';
+import { startVoiceDictation } from '@/lib/voice';
+import { ANA_ID, DANIEL_ID, PEOPLE } from '@/lib/people';
 import type { Account, Expense } from '@/lib/types';
 import { Header } from '@/components/Header';
 
@@ -17,30 +26,99 @@ export default function HomeScreen() {
   const [balance, setBalance] = useState(0);
   const [loading, setLoading] = useState(true);
 
+  const [quickCmd, setQuickCmd] = useState('');
+  const [listening, setListening] = useState(false);
+  const [savingQuick, setSavingQuick] = useState(false);
+  const [quickFeedback, setQuickFeedback] = useState<string | null>(null);
+  const voiceStopRef = useRef<{ stop: () => void } | null>(null);
+
+  const loadHome = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [accs, exps, bal] = await Promise.all([fetchAccounts(), fetchExpenses(50), computeBalance()]);
+      setAccounts(accs);
+      setExpenses(exps);
+      setBalance(bal);
+    } catch (e) {
+      console.error('Home load error', e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
-      let active = true;
-      (async () => {
-        setLoading(true);
-        try {
-          const [accs, exps, bal] = await Promise.all([fetchAccounts(), fetchExpenses(50), computeBalance()]);
-          if (!active) return;
-          setAccounts(accs);
-          setExpenses(exps);
-          setBalance(bal);
-        } catch (e) {
-          console.error('Home load error', e);
-        } finally {
-          if (active) setLoading(false);
-        }
-      })();
-      return () => {
-        active = false;
-      };
-    }, []),
+      loadHome();
+    }, [loadHome]),
   );
 
+  function toggleVoice() {
+    setQuickFeedback(null);
+    if (listening) {
+      voiceStopRef.current?.stop();
+      setListening(false);
+      return;
+    }
+    const session = startVoiceDictation({
+      onResult: (transcript) => {
+        setQuickCmd(transcript);
+      },
+      onError: (msg) => {
+        setListening(false);
+        setQuickFeedback(msg);
+      },
+      onEnd: () => {
+        setListening(false);
+      },
+    });
+    if (session) {
+      voiceStopRef.current = session;
+      setListening(true);
+    }
+  }
+
+  async function handleQuickCommandSave() {
+    if (!quickCmd.trim()) return;
+    setSavingQuick(true);
+    setQuickFeedback(null);
+    try {
+      const parsed = await parseVoiceCommand(quickCmd);
+      if (!parsed.items || parsed.items.length === 0 || parsed.totalAmount <= 0) {
+        setQuickFeedback('Incluye qué compraste y el monto, ej: "Almuerzo 40 mil pagó Silvia"');
+        return;
+      }
+      const paidById = parsed.paidBy === 'silvia' ? ANA_ID : DANIEL_ID;
+      const defaultAcc = accounts.find((a) => a.person_id === paidById && a.is_default) ?? accounts.find((a) => a.person_id === paidById);
+      await saveExpense({
+        title: parsed.title || 'Gasto rápido',
+        expenseDate: toInputDate(new Date()),
+        totalAmount: parsed.totalAmount,
+        paidByPersonId: paidById,
+        accountId: defaultAcc?.id ?? null,
+        splitType: parsed.items.length > 1 ? 'by_items' : (parsed.splitType ?? 'half'),
+        surchargeApplied: false,
+        surchargeAmount: 0,
+        alreadyPaid: false,
+        note: `Comando rápido: "${quickCmd.trim()}"`,
+        imageUrl: null,
+        source: 'manual',
+        items:
+          parsed.items.length > 1
+            ? parsed.items.map((it) => ({ name: it.description, amount: it.amount, assigned_to: 'half' }))
+            : undefined,
+      });
+      setQuickCmd('');
+      setQuickFeedback(`✓ Guardado: ${parsed.title} por ${formatCOP(parsed.totalAmount)}`);
+      await loadHome();
+    } catch (e: any) {
+      setQuickFeedback(e?.message ?? 'No se pudo guardar el comando rápido.');
+    } finally {
+      setSavingQuick(false);
+    }
+  }
+
   const balanceInfo = describeBalance(balance);
+  const creditAlerts = accounts.filter((a) => a.type === 'credit' && (a.credit_used ?? 0) > 0);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -52,7 +130,7 @@ export default function HomeScreen() {
           style={{
             borderRadius: radius.lg,
             padding: spacing.lg,
-            marginBottom: spacing.lg,
+            marginBottom: spacing.md,
             backgroundColor: balance === 0 ? colors.emeraldDeep : colors.emerald,
             ...shadows.elevated,
           }}
@@ -76,11 +154,94 @@ export default function HomeScreen() {
           )}
         </View>
 
+        {/* Quick Voice / WhatsApp-style Expense Bar */}
+        <Card style={{ marginBottom: spacing.md, borderWidth: 1, borderColor: listening ? colors.error : colors.emeraldLight }}>
+          <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 12, color: colors.emeraldDeep, marginBottom: 6 }}>
+            ⚡ Registro rápido por voz o texto (como un mensaje)
+          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
+            <Pressable
+              onPress={toggleVoice}
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: listening ? colors.error : colors.daniel,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              {listening ? <MicOff color="#fff" size={18} strokeWidth={2} /> : <Mic color="#fff" size={18} strokeWidth={2} />}
+            </Pressable>
+            <TextInput
+              value={quickCmd}
+              onChangeText={setQuickCmd}
+              placeholder='Di o escribe: "Almuerzo 45 mil pagó Silvia"'
+              placeholderTextColor={colors.textMuted}
+              style={{
+                flex: 1,
+                fontFamily: 'Inter-Medium',
+                fontSize: 13,
+                color: colors.text,
+                backgroundColor: colors.bg,
+                paddingHorizontal: spacing.sm,
+                paddingVertical: spacing.sm,
+                borderRadius: radius.sm,
+              }}
+            />
+            <Pressable
+              onPress={handleQuickCommandSave}
+              disabled={savingQuick || !quickCmd.trim()}
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: quickCmd.trim() ? colors.emerald : colors.border,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Send color="#fff" size={17} strokeWidth={2} />
+            </Pressable>
+          </View>
+          {listening && (
+            <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 12, color: colors.error, marginTop: 6 }}>
+              🔴 Escuchando... habla ahora y luego toca enviar.
+            </Text>
+          )}
+          {quickFeedback && (
+            <Text style={{ fontFamily: 'Inter-Medium', fontSize: 12, color: quickFeedback.startsWith('✓') ? colors.emeraldDeep : colors.warning, marginTop: 6 }}>
+              {quickFeedback}
+            </Text>
+          )}
+        </Card>
+
+        {/* Smart Credit Card Alerts */}
+        {creditAlerts.map((card) => (
+          <Card
+            key={card.id}
+            onPress={() => router.push(`/cuentas?id=${card.id}`)}
+            style={{ marginBottom: spacing.md, backgroundColor: colors.warningLight, borderWidth: 1, borderColor: colors.warning }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+              <AlertTriangle color={colors.warning} size={20} strokeWidth={2} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: 'Inter-Bold', fontSize: 13, color: colors.text }}>
+                  Alerta 0% interés · {card.name}
+                </Text>
+                <Text style={{ fontFamily: 'Inter-Regular', fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
+                  Cupo usado: <Text style={{ fontFamily: 'Inter-Bold', color: colors.text }}>{formatCOP(card.credit_used ?? 0)}</Text> · Corte día {card.cutoff_day ?? 15} · Pago límite día {card.due_day ?? 4}
+                </Text>
+              </View>
+            </View>
+          </Card>
+        ))}
+
         {/* Quick actions */}
         <View style={{ flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg }}>
-          <QuickAction icon={<Plus color="#fff" size={22} strokeWidth={2} />} label="Nuevo gasto" onPress={() => router.push('/gastos?nuevo=1')} bg={colors.emerald} />
-          <QuickAction icon={<ScanLine color="#fff" size={22} strokeWidth={2} />} label="Escanear" onPress={() => router.push('/escanear')} bg={colors.daniel} />
-          <QuickAction icon={<Wallet color="#fff" size={22} strokeWidth={2} />} label="Cuentas" onPress={() => router.push('/cuentas')} bg={colors.ana} />
+          <QuickAction icon={<Plus color="#fff" size={20} strokeWidth={2} />} label="Nuevo gasto" onPress={() => router.push('/gastos?nuevo=1')} bg={colors.emerald} />
+          <QuickAction icon={<ScanLine color="#fff" size={20} strokeWidth={2} />} label="Escanear" onPress={() => router.push('/escanear')} bg={colors.daniel} />
+          <QuickAction icon={<Target color="#fff" size={20} strokeWidth={2} />} label="Metas y Mes" onPress={() => router.push('/metas')} bg={colors.ana} />
         </View>
 
         {/* Loading state */}
@@ -189,7 +350,9 @@ function AccountRow({ account, onPress }: { account: Account; onPress: () => voi
 
 function ExpenseRow({ expense }: { expense: Expense }) {
   const person = PEOPLE[expense.paid_by_person_id];
-  const { danielShare, anaShare } = computeShare(expense.total_amount, expense.split_type, expense.expense_items, expense.paid_by_person_id);
+  const computed = computeShare(expense.total_amount, expense.split_type, expense.expense_items, expense.paid_by_person_id);
+  const danielShare = expense.share_daniel ?? computed.danielShare;
+  const anaShare = expense.share_ana ?? computed.anaShare;
   return (
     <Card>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -201,10 +364,12 @@ function ExpenseRow({ expense }: { expense: Expense }) {
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm }}>
         <PersonBadge name={person?.name ?? ''} emoji={person?.emoji ?? ''} color={person?.color ?? colors.emerald} size="sm" />
-        <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-          <ShareChip label={`D ${formatCOP(danielShare)}`} color={colors.daniel} />
-          <ShareChip label={`S ${formatCOP(anaShare)}`} color={colors.ana} />
-          {expense.surcharge_applied && <ShareChip label="+3% datáfono" color={colors.warning} />}
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            <ShareChip label={`D ${formatCOP(danielShare)}`} color={colors.daniel} />
+            <ShareChip label={`S ${formatCOP(anaShare)}`} color={colors.ana} />
+            {expense.surcharge_applied && <ShareChip label="+3% datáfono" color={colors.warning} />}
+          </View>
         </View>
       </View>
     </Card>

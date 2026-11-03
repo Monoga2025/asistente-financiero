@@ -1,5 +1,5 @@
 export type AccountType = 'debit' | 'savings' | 'credit';
-export type SplitType = 'half' | 'all_daniel' | 'all_ana' | 'by_items';
+export type SplitType = 'half' | 'all_daniel' | 'all_ana' | 'by_items' | 'proportional';
 export type Assignment = 'ana' | 'daniel' | 'half';
 export type ExpenseSource = 'manual' | 'scan';
 
@@ -86,4 +86,48 @@ export interface ScanResult {
   date: string | null;
   concepts: ReceiptConcept[];
   total: number;
+}
+
+export interface Goal {
+  id: number;
+  name: string;
+  target_amount: number;
+  frequency: 'una_vez' | 'semanal' | 'mensual' | 'anual';
+  deadline: string | null;
+  current_saved: number;
+  notes: string | null;
+}
+
+export interface GoalProjection {
+  reached: boolean;
+  missing: number;
+  months_left: number | null;
+  needed_monthly: number | null;
+  shortfall_monthly: number;
+  on_track: boolean;
+  estimated_months: number | null;
+}
+
+export interface MonthCloseSummary {
+  year: number;
+  month: number;
+  total: number;
+  count: number;
+  by_category: Record<string, number>;
+  top_category: string | null;
+  by_person: { ana: number; daniel: number };
+  previous_total: number;
+  change_pct: number | null;
+  daily_average: number;
+}
+
+export interface RecurringExpense {
+  id: number;
+  title: string;
+  amount: number;
+  day_of_month: number;
+  paid_by_person_id: number;
+  split_type: string;
+  daniel_pct: number;
+  category: string;
 }
