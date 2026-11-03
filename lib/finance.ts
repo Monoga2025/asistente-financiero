@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import { DANIEL_ID, ANA_ID } from './people';
 import type { Account, AccountTransaction, Assignment, Expense, ExpenseItem, Settlement, SplitType } from './types';
 
@@ -16,9 +17,9 @@ export interface BalanceInfo {
 export function describeBalance(amount: number): BalanceInfo {
   if (amount === 0) return { amount: 0, label: 'Van a mano', owesFrom: null, owesTo: null };
   if (amount > 0) {
-    return { amount, label: 'Ana le debe a Daniel', owesFrom: 'Ana', owesTo: 'Daniel' };
+    return { amount, label: 'Silvia le debe a Daniel', owesFrom: 'Silvia', owesTo: 'Daniel' };
   }
-  return { amount: Math.abs(amount), label: 'Daniel le debe a Ana', owesFrom: 'Daniel', owesTo: 'Ana' };
+  return { amount: Math.abs(amount), label: 'Daniel le debe a Silvia', owesFrom: 'Daniel', owesTo: 'Silvia' };
 }
 
 export function computeShare(
@@ -104,6 +105,62 @@ export async function saveExpense(input: SaveExpenseInput): Promise<Expense> {
   return saved;
 }
 
+export async function deleteExpense(expenseId: string): Promise<void> {
+  await apiDelete(`/expenses/${expenseId}`);
+  invalidateBootstrap();
+}
+
+export async function parseExpensesText(text: string): Promise<{ description: string; amount: number; category?: string }[]> {
+  const data = await apiPost<{ items: { description: string; amount: number; category?: string }[] }>('/api/expenses/parse-text', { text });
+  return data.items ?? [];
+}
+
+export async function createAccount(input: {
+  personId: string;
+  name: string;
+  bank: string;
+  kind: 'debit' | 'credit';
+  balance: number;
+  creditLimit?: number | null;
+  cutoffDay?: number | null;
+  dueDay?: number | null;
+  isDefault?: boolean;
+}): Promise<Account> {
+  const data = await apiPost<{ account: ApiAccount }>('/accounts', input);
+  invalidateBootstrap();
+  return mapAccount(data.account);
+}
+
+export async function updateAccount(
+  accountId: string,
+  input: {
+    name?: string;
+    balance?: number;
+    creditLimit?: number | null;
+    cutoffDay?: number | null;
+    dueDay?: number | null;
+    description?: string;
+  },
+): Promise<Account> {
+  const data = await apiPut<{ account: ApiAccount }>(`/accounts/${accountId}`, input);
+  invalidateBootstrap();
+  return mapAccount(data.account);
+}
+
+export async function recordAccountMovement(
+  accountId: string,
+  input: {
+    type: 'income' | 'payment' | 'expense';
+    amount: number;
+    description: string;
+    date?: string;
+  },
+): Promise<Account> {
+  const data = await apiPost<{ account: ApiAccount }>(`/accounts/${accountId}/movements`, input);
+  invalidateBootstrap();
+  return mapAccount(data.account);
+}
+
 export async function uploadReceiptImage(): Promise<string> {
   throw new Error('La imagen se guarda desde el backend al escanear la factura.');
 }
@@ -146,10 +203,16 @@ export async function scanReceiptImage(uri: string): Promise<{
   aiNote: string | null;
 }> {
   const form = new FormData();
-  form.append('image', { uri, name: 'recibo.jpg', type: 'image/jpeg' } as any);
+  if (Platform.OS === 'web' || uri.startsWith('blob:') || uri.startsWith('data:')) {
+    const blobRes = await fetch(uri);
+    const blob = await blobRes.blob();
+    form.append('image', blob, 'recibo.jpg');
+  } else {
+    form.append('image', { uri, name: 'recibo.jpg', type: 'image/jpeg' } as any);
+  }
   const res = await fetch(`${API_BASE}/receipts/scan`, { method: 'POST', headers: authHeaders(), body: form });
   const json = await res.json();
-  if (!res.ok || !json.ok) throw new Error(json.error || 'No se pudo escanear la factura.');
+  if (!res.ok || !json.ok) throw new Error(json.error || json.detail || 'No se pudo escanear la factura.');
   return {
     draftId: json.draftId,
     imageUrl: json.draft?.imageUrl ?? null,
@@ -196,6 +259,27 @@ async function apiPost<T>(path: string, body: unknown): Promise<T> {
   return json as T;
 }
 
+async function apiPut<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json();
+  if (!res.ok || json.ok === false) throw new Error(json.error || json.detail || `Error ${res.status}`);
+  return json as T;
+}
+
+async function apiDelete<T>(path: string): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  const json = await res.json();
+  if (!res.ok || json.ok === false) throw new Error(json.error || json.detail || `Error ${res.status}`);
+  return json as T;
+}
+
 async function getBootstrap(): Promise<ApiBootstrap> {
   const now = Date.now();
   if (bootstrapCache && now - bootstrapCache.time < BOOTSTRAP_TTL_MS) return bootstrapCache.data;
@@ -214,10 +298,11 @@ function authHeaders(): Record<string, string> {
 
 function mapAccount(account: ApiAccount): Account {
   const kind = account.kind === 'credit' ? 'credit' : 'debit';
+  const personName = account.personSlug === 'ana' || account.personSlug === 'silvia' ? 'Silvia' : 'Daniel';
   return {
     id: String(account.id),
-    person_id: account.personSlug === 'ana' ? ANA_ID : DANIEL_ID,
-    name: `${account.personName} ${account.name}`,
+    person_id: account.personSlug === 'ana' || account.personSlug === 'silvia' ? ANA_ID : DANIEL_ID,
+    name: `${personName} ${account.name}`,
     bank: account.type?.startsWith('nu') ? 'Nu' : 'Nequi',
     type: kind,
     balance: account.balance,
@@ -289,7 +374,7 @@ type ApiAccount = {
   creditLimit: number | null;
   cutoffDay: number | null;
   dueDay: number | null;
-  personSlug: 'ana' | 'daniel';
+  personSlug: 'ana' | 'silvia' | 'daniel';
   personName: string;
 };
 
@@ -307,7 +392,7 @@ type ApiExpense = {
   date: string;
   totalAmount: number;
   paidByPersonId?: number;
-  paidBy?: 'ana' | 'daniel';
+  paidBy?: 'ana' | 'silvia' | 'daniel';
   accountId: number | null;
   splitType: string;
   shareAna: number;

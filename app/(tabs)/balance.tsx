@@ -1,13 +1,13 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { ArrowRight, Check, Scale, X, HandCoins } from 'lucide-react-native';
 import { Button, Card, Chip, PersonBadge } from '@/components/ui';
 import { Header } from '@/components/Header';
 import { colors, radius, shadows, spacing } from '@/lib/theme';
 import { formatCOP, formatDate, toInputDate } from '@/lib/format';
 import { computeBalance, describeBalance, fetchAccounts, fetchExpenses, fetchSettlements, saveSettlement, computeShare, balanceDeltaForExpense } from '@/lib/finance';
-import { PEOPLE, PERSON_LIST, DANIEL_ID, ANA_ID } from '@/lib/people';
+import { PEOPLE, DANIEL_ID, ANA_ID } from '@/lib/people';
 import type { Account, Expense, Settlement } from '@/lib/types';
 
 export default function BalanceScreen() {
@@ -61,7 +61,7 @@ export default function BalanceScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView contentContainerStyle={{ paddingHorizontal: spacing.md, paddingTop: spacing.lg, paddingBottom: spacing.xl + 40 }} showsVerticalScrollIndicator={false}>
-        <Header title="Balance" subtitle="Deudas entre Ana y Daniel" />
+        <Header title="Balance" subtitle="Deudas entre Silvia y Daniel" />
 
         {loading ? (
           <ActivityIndicator size="large" color={colors.emerald} />
@@ -88,9 +88,9 @@ export default function BalanceScreen() {
                 <>
                   <Text style={{ fontFamily: 'Inter-Bold', fontSize: 38, color: '#fff' }}>{formatCOP(balanceInfo.amount)}</Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm }}>
-                    <PersonBadge name={balanceInfo.owesFrom ?? ''} emoji={PEOPLE[balanceInfo.owesFrom === 'Ana' ? ANA_ID : DANIEL_ID]?.emoji ?? ''} color={PEOPLE[balanceInfo.owesFrom === 'Ana' ? ANA_ID : DANIEL_ID]?.color ?? colors.emerald} size="sm" />
+                    <PersonBadge name={balanceInfo.owesFrom ?? ''} emoji={PEOPLE[balanceInfo.owesFrom === 'Silvia' ? ANA_ID : DANIEL_ID]?.emoji ?? ''} color={PEOPLE[balanceInfo.owesFrom === 'Silvia' ? ANA_ID : DANIEL_ID]?.color ?? colors.emerald} size="sm" />
                     <ArrowRight color="#fff" size={18} strokeWidth={2} />
-                    <PersonBadge name={balanceInfo.owesTo ?? ''} emoji={PEOPLE[balanceInfo.owesTo === 'Ana' ? ANA_ID : DANIEL_ID]?.emoji ?? ''} color={PEOPLE[balanceInfo.owesTo === 'Ana' ? ANA_ID : DANIEL_ID]?.color ?? colors.emerald} size="sm" />
+                    <PersonBadge name={balanceInfo.owesTo ?? ''} emoji={PEOPLE[balanceInfo.owesTo === 'Silvia' ? ANA_ID : DANIEL_ID]?.emoji ?? ''} color={PEOPLE[balanceInfo.owesTo === 'Silvia' ? ANA_ID : DANIEL_ID]?.color ?? colors.emerald} size="sm" />
                   </View>
                 </>
               )}
@@ -130,12 +130,12 @@ export default function BalanceScreen() {
                             <Text style={{ fontFamily: 'Inter-Medium', fontSize: 11, color: colors.daniel }}>Daniel {formatCOP(h.danielShare)}</Text>
                           </View>
                           <View style={{ paddingHorizontal: spacing.xs + 2, paddingVertical: 3, borderRadius: radius.full, backgroundColor: colors.ana + '1a' }}>
-                            <Text style={{ fontFamily: 'Inter-Medium', fontSize: 11, color: colors.ana }}>Ana {formatCOP(h.anaShare)}</Text>
+                            <Text style={{ fontFamily: 'Inter-Medium', fontSize: 11, color: colors.ana }}>Silvia {formatCOP(h.anaShare)}</Text>
                           </View>
                           {h.delta !== 0 && (
                             <View style={{ paddingHorizontal: spacing.xs + 2, paddingVertical: 3, borderRadius: radius.full, backgroundColor: h.delta > 0 ? colors.emeraldLight : colors.warningLight }}>
                               <Text style={{ fontFamily: 'Inter-Medium', fontSize: 11, color: h.delta > 0 ? colors.emeraldDeep : colors.warning }}>
-                                {h.delta > 0 ? 'A→D' : 'D→A'} {formatCOP(Math.abs(h.delta))}
+                                {h.delta > 0 ? 'S→D' : 'D→S'} {formatCOP(Math.abs(h.delta))}
                               </Text>
                             </View>
                           )}
@@ -197,8 +197,8 @@ export default function BalanceScreen() {
 }
 
 function SettleModal({ visible, onClose, balanceInfo, accounts, onDone }: { visible: boolean; onClose: () => void; balanceInfo: ReturnType<typeof describeBalance>; accounts: Account[]; onDone: () => void }) {
-  const fromId = balanceInfo.owesFrom === 'Ana' ? ANA_ID : balanceInfo.owesFrom === 'Daniel' ? DANIEL_ID : null;
-  const toId = balanceInfo.owesTo === 'Ana' ? ANA_ID : balanceInfo.owesTo === 'Daniel' ? DANIEL_ID : null;
+  const fromId = balanceInfo.owesFrom === 'Silvia' ? ANA_ID : balanceInfo.owesFrom === 'Daniel' ? DANIEL_ID : null;
+  const toId = balanceInfo.owesTo === 'Silvia' ? ANA_ID : balanceInfo.owesTo === 'Daniel' ? DANIEL_ID : null;
   const [amount, setAmount] = useState('');
   const [accountId, setAccountId] = useState<string | null>(null);
   const [note, setNote] = useState('');
@@ -243,9 +243,9 @@ function SettleModal({ visible, onClose, balanceInfo, accounts, onDone }: { visi
           </View>
 
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md }}>
-            <PersonBadge name={balanceInfo.owesFrom ?? ''} emoji={fromId === ANA_ID ? '👩' : '🧑'} color={fromId === ANA_ID ? colors.ana : colors.daniel} size="sm" />
+            <PersonBadge name={balanceInfo.owesFrom ?? ''} emoji={fromId === ANA_ID ? 'S' : 'D'} color={fromId === ANA_ID ? colors.ana : colors.daniel} size="sm" />
             <ArrowRight color={colors.textMuted} size={18} strokeWidth={2} />
-            <PersonBadge name={balanceInfo.owesTo ?? ''} emoji={toId === ANA_ID ? '👩' : '🧑'} color={toId === ANA_ID ? colors.ana : colors.daniel} size="sm" />
+            <PersonBadge name={balanceInfo.owesTo ?? ''} emoji={toId === ANA_ID ? 'S' : 'D'} color={toId === ANA_ID ? colors.ana : colors.daniel} size="sm" />
           </View>
 
           <Text style={{ fontFamily: 'Inter-Regular', fontSize: 13, color: colors.textSecondary, marginBottom: spacing.sm }}>

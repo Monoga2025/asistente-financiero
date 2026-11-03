@@ -13,8 +13,10 @@ from .db import (
     GOAL_FREQUENCIES,
     bootstrap,
     confirm_receipt,
+    create_account,
     create_goal,
     create_receipt_draft,
+    delete_expense,
     delete_goal,
     get_account_transactions,
     get_expenses_for_month,
@@ -22,8 +24,10 @@ from .db import (
     get_receipt_blob,
     init_database,
     list_goals,
+    record_account_movement,
     save_expense,
     save_settlement,
+    update_account,
     update_goal,
     upload_receipt_image,
 )
@@ -105,6 +109,30 @@ def create_app() -> FastAPI:
     def mobile_account_transactions(account_id: int, limit: int = Query(default=100, ge=1, le=300)) -> dict[str, Any]:
         return {"ok": True, "transactions": get_account_transactions(account_id, limit)}
 
+    @app.post("/accounts", dependencies=[Depends(require_app_token)])
+    def post_account(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            account = create_account(payload)
+            return {"ok": True, "account": account}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.put("/accounts/{account_id}", dependencies=[Depends(require_app_token)])
+    def put_account(account_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            account = update_account(account_id, payload)
+            return {"ok": True, "account": account}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/accounts/{account_id}/movements", dependencies=[Depends(require_app_token)])
+    def post_account_movement(account_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            account = record_account_movement(account_id, payload)
+            return {"ok": True, "account": account}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.get("/receipts/images/{image_id}")
     def receipt_image(image_id: int) -> Response:
         blob = get_receipt_blob(image_id)
@@ -127,6 +155,12 @@ def create_app() -> FastAPI:
             return {"ok": True, **result}
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.delete("/expenses/{expense_id}", dependencies=[Depends(require_app_token)])
+    def remove_expense(expense_id: int) -> dict[str, Any]:
+        if not delete_expense(expense_id):
+            raise HTTPException(status_code=404, detail="Gasto no encontrado.")
+        return {"ok": True}
 
     @app.post("/settlements", dependencies=[Depends(require_app_token)])
     def create_settlement(payload: dict[str, Any]) -> dict[str, Any]:

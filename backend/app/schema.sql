@@ -104,58 +104,16 @@ create index if not exists idx_account_tx_account on account_transactions(accoun
 create index if not exists idx_account_tx_date on account_transactions(date desc, id desc);
 
 insert into people (id, slug, name, color, created_at) values
-  (1, 'ana', 'Ana', '#e0578e', '2026-08-01T00:00:00'),
+  (1, 'ana', 'Silvia', '#e0578e', '2026-08-01T00:00:00'),
   (2, 'daniel', 'Daniel', '#2f6fed', '2026-08-01T00:00:00')
 on conflict (id) do update set slug = excluded.slug, name = excluded.name, color = excluded.color;
 
 insert into accounts (id, person_id, name, type, kind, balance, is_default, credit_limit, cutoff_day, due_day, created_at) values
-  (1, 1, 'Nequi', 'nequi', 'debit', 250000, true, null, null, null, '2026-08-01T00:00:00'),
+  (1, 1, 'Nequi', 'nequi', 'debit', 0, true, null, null, null, '2026-08-01T00:00:00'),
   (2, 1, 'Nu Ahorros', 'nu_ahorros', 'debit', 0, false, null, null, null, '2026-08-01T00:00:00'),
-  (3, 2, 'Nequi', 'nequi', 'debit', 800000, true, null, null, null, '2026-08-01T00:00:00'),
+  (3, 2, 'Nequi', 'nequi', 'debit', 0, true, null, null, null, '2026-08-01T00:00:00'),
   (4, 2, 'Nu Ahorros', 'nu_ahorros', 'debit', 0, false, null, null, null, '2026-08-01T00:00:00'),
-  (5, 2, 'Nu Credito', 'nu_credito', 'credit', 170000, false, 1000000, 15, 4, '2026-08-01T00:00:00')
-on conflict (id) do update set
-  person_id = excluded.person_id,
-  name = excluded.name,
-  type = excluded.type,
-  kind = excluded.kind,
-  balance = excluded.balance,
-  is_default = excluded.is_default,
-  credit_limit = excluded.credit_limit,
-  cutoff_day = excluded.cutoff_day,
-  due_day = excluded.due_day;
-
--- Fictional sample data for demos and local development.
-insert into expenses (id, title, total_amount, date, paid_by_person_id, account_id, split_type, share_ana, share_daniel, surcharge_amount, surcharge_split_type, notes, receipt_image_url, source, created_at) values
-  (1, 'Supermercado', 120000, '2026-07-28', 2, 5, 'items', 70000, 50000, 0, 'equal', null, null, 'receipt', '2026-08-01T00:00:00'),
-  (2, 'Cine', 50000, '2026-07-31', 2, 5, 'items', 0, 50000, 0, 'equal', null, null, 'manual', '2026-08-01T00:00:00'),
-  (3, 'Ferreteria', 36000, '2026-07-28', 1, 1, 'items', 18000, 18000, 0, 'equal', null, null, 'receipt', '2026-08-01T00:00:00'),
-  (4, 'Lavanderia', 20000, '2026-07-30', 2, 3, 'items', 10000, 10000, 0, 'equal', null, null, 'manual', '2026-08-01T00:00:00'),
-  (5, 'Arriendo', 1000000, '2026-06-30', 2, 3, 'items', 450000, 550000, 0, 'equal', null, null, 'manual', '2026-08-01T00:00:00'),
-  (6, 'Desayuno', 15000, '2026-07-31', 2, 3, 'items', 0, 15000, 0, 'equal', null, null, 'manual', '2026-08-01T00:00:00')
-on conflict (id) do nothing;
-
-insert into expense_items (id, expense_id, description, amount, assigned_to) values
-  (1, 1, 'Frutas y verduras', 40000, 'equal'),
-  (2, 1, 'Aseo del hogar', 40000, 'equal'),
-  (3, 1, 'Cuidado personal', 30000, 'ana'),
-  (4, 1, 'Snacks', 10000, 'daniel'),
-  (5, 2, 'Entradas de cine', 50000, 'daniel'),
-  (6, 3, 'Herramientas', 36000, 'equal'),
-  (7, 4, 'Lavanderia', 20000, 'equal'),
-  (8, 5, 'Parte Daniel arriendo', 550000, 'daniel'),
-  (9, 5, 'Parte Ana arriendo', 450000, 'ana'),
-  (10, 6, 'Desayuno', 15000, 'daniel')
-on conflict (id) do nothing;
-
-insert into account_transactions (id, account_id, type, amount, description, date, related_expense_id, transfer_group_id, created_at) values
-  (1, 3, 'income', 1800000, 'Salario', '2026-07-30', null, null, '2026-08-01T00:00:00'),
-  (2, 3, 'expense', -1000000, 'Arriendo', '2026-06-30', null, null, '2026-08-01T00:00:00'),
-  (3, 1, 'expense', -36000, 'Ferreteria', '2026-07-28', null, null, '2026-08-01T00:00:00'),
-  (4, 3, 'expense', -20000, 'Lavanderia', '2026-07-30', null, null, '2026-08-01T00:00:00'),
-  (5, 5, 'expense', -120000, 'Supermercado', '2026-07-28', null, null, '2026-08-01T00:00:00'),
-  (6, 5, 'expense', -50000, 'Cine', '2026-07-31', null, null, '2026-08-01T00:00:00'),
-  (7, 3, 'expense', -15000, 'Desayuno', '2026-07-31', null, null, '2026-08-01T00:00:00')
+  (5, 2, 'Nu Credito', 'nu_credito', 'credit', 0, false, 1000000, 15, 4, '2026-08-01T00:00:00')
 on conflict (id) do nothing;
 
 select setval(pg_get_serial_sequence('people', 'id'), coalesce((select max(id) from people), 1), true);

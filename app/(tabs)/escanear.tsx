@@ -144,7 +144,7 @@ export default function EscanearScreen() {
               </View>
               <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 17, color: colors.text, textAlign: 'center' }}>Escanea tu factura con IA</Text>
               <Text style={{ fontFamily: 'Inter-Regular', fontSize: 14, color: colors.textSecondary, marginTop: spacing.xs, textAlign: 'center' }}>
-                Extraemos tienda y conceptos. Luego decides que paga Ana, Daniel o mitad.
+                Extraemos tienda y conceptos. Luego decides qué paga Silvia, Daniel o mitad.
               </Text>
             </Card>
             <ActionButton icon={<Camera color="#fff" size={22} strokeWidth={2} />} label="Tomar foto" onPress={() => pickImage('camera')} bg={colors.daniel} />
@@ -186,7 +186,7 @@ export default function EscanearScreen() {
                       <TextInput value={formatCOP(concept.amount)} onChangeText={(value) => updateConcept(index, 'amount', parseCOP(value))} keyboardType="numeric" style={[inputStyle, { width: 120, fontFamily: 'Inter-SemiBold' }]} />
                     </View>
                     <View style={{ flexDirection: 'row', gap: 6, marginTop: spacing.sm }}>
-                      <Chip label="Ana" selected={concept.assigned_to === 'ana'} onPress={() => updateConcept(index, 'assigned_to', 'ana')} color={colors.ana} lightColor={colors.anaLight} />
+                      <Chip label="Silvia" selected={concept.assigned_to === 'ana'} onPress={() => updateConcept(index, 'assigned_to', 'ana')} color={colors.ana} lightColor={colors.anaLight} />
                       <Chip label="Daniel" selected={concept.assigned_to === 'daniel'} onPress={() => updateConcept(index, 'assigned_to', 'daniel')} color={colors.daniel} lightColor={colors.danielLight} />
                       <Chip label="Mitad" selected={concept.assigned_to === 'half'} onPress={() => updateConcept(index, 'assigned_to', 'half')} />
                     </View>

@@ -1,4 +1,4 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -10,12 +10,20 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Calendar, Check, ChevronDown, Image as ImageIcon, Plus, Trash2, X } from 'lucide-react-native';
+import { Calendar, Check, ChevronDown, Image as ImageIcon, Plus, Sparkles, Trash2, X } from 'lucide-react-native';
 import { Button, Card, Chip, PersonBadge } from '@/components/ui';
 import { Header } from '@/components/Header';
 import { colors, radius, shadows, spacing } from '@/lib/theme';
 import { formatCOP, formatDate, parseCOP, toInputDate } from '@/lib/format';
-import { balanceDeltaForExpense, computeShare, fetchAccounts, fetchExpenses, saveExpense } from '@/lib/finance';
+import {
+  balanceDeltaForExpense,
+  computeShare,
+  deleteExpense,
+  fetchAccounts,
+  fetchExpenses,
+  parseExpensesText,
+  saveExpense,
+} from '@/lib/finance';
 import { PEOPLE, PERSON_LIST, DANIEL_ID, ANA_ID } from '@/lib/people';
 import type { Account, Assignment, Expense, SplitType } from '@/lib/types';
 import type { SaveExpenseInput } from '@/lib/finance';
@@ -44,6 +52,8 @@ export default function GastosScreen() {
   const [alreadyPaid, setAlreadyPaid] = useState(false);
   const [note, setNote] = useState('');
   const [items, setItems] = useState<ItemDraft[]>([]);
+  const [quickText, setQuickText] = useState('');
+  const [parsingText, setParsingText] = useState(false);
 
   const [showAccountPicker, setShowAccountPicker] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -89,7 +99,42 @@ export default function GastosScreen() {
     setAlreadyPaid(false);
     setNote('');
     setItems([]);
+    setQuickText('');
     setError(null);
+  }
+
+  async function handleQuickParse() {
+    if (!quickText.trim()) return;
+    setParsingText(true);
+    setError(null);
+    try {
+      const parsed = await parseExpensesText(quickText);
+      if (parsed.length === 0) {
+        setError('Escribe conceptos con su valor, ej: "pan 5000, cafe 3 mil"');
+        return;
+      }
+      const total = parsed.reduce((sum, it) => sum + it.amount, 0);
+      setAmount(String(total));
+      if (!title.trim()) {
+        setTitle(parsed.length === 1 ? parsed[0].description : 'Compra rápida');
+      }
+      if (parsed.length > 1) {
+        setSplitType('by_items');
+        setItems(
+          parsed.map((it, idx) => ({
+            id: `item_${Date.now()}_${idx}`,
+            name: it.description,
+            amount: String(it.amount),
+            assigned_to: 'half' as Assignment,
+          })),
+        );
+      }
+      setQuickText('');
+    } catch (e: any) {
+      setError(e?.message ?? 'No se pudo procesar el texto.');
+    } finally {
+      setParsingText(false);
+    }
   }
 
   function onPaidByChange(personId: string) {
@@ -171,6 +216,39 @@ export default function GastosScreen() {
           <ExpenseList />
         ) : (
           <View style={{ gap: spacing.md }}>
+            {/* Quick text parser */}
+            <Card style={{ borderWidth: 1, borderColor: colors.emeraldLight }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: spacing.xs }}>
+                <Sparkles color={colors.emerald} size={16} strokeWidth={2} />
+                <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 13, color: colors.emeraldDeep }}>
+                  Dictado o texto rápido
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'center' }}>
+                <TextInput
+                  value={quickText}
+                  onChangeText={setQuickText}
+                  placeholder="Ej. pan 5000, cafe 3 mil, leche 6500"
+                  placeholderTextColor={colors.textMuted}
+                  style={[inputStyle, { flex: 1, fontSize: 14 }]}
+                />
+                <Pressable
+                  onPress={handleQuickParse}
+                  disabled={parsingText || !quickText.trim()}
+                  style={{
+                    backgroundColor: quickText.trim() ? colors.emerald : colors.border,
+                    paddingHorizontal: spacing.md,
+                    paddingVertical: spacing.sm + 2,
+                    borderRadius: radius.sm,
+                  }}
+                >
+                  <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 13, color: '#fff' }}>
+                    {parsingText ? '...' : 'Extraer'}
+                  </Text>
+                </Pressable>
+              </View>
+            </Card>
+
             {/* Title */}
             <Card>
               <Label text="Título" />
@@ -275,7 +353,7 @@ export default function GastosScreen() {
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
                 <Chip label="Mitad y mitad" selected={splitType === 'half'} onPress={() => setSplitType('half')} />
                 <Chip label="Todo Daniel" selected={splitType === 'all_daniel'} onPress={() => setSplitType('all_daniel')} color={colors.daniel} lightColor={colors.danielLight} />
-                <Chip label="Todo Ana" selected={splitType === 'all_ana'} onPress={() => setSplitType('all_ana')} color={colors.ana} lightColor={colors.anaLight} />
+                <Chip label="Todo Silvia" selected={splitType === 'all_ana'} onPress={() => setSplitType('all_ana')} color={colors.ana} lightColor={colors.anaLight} />
                 <Chip label="Por conceptos" selected={splitType === 'by_items'} onPress={() => setSplitType('by_items')} />
               </View>
 
@@ -304,7 +382,7 @@ export default function GastosScreen() {
                         </Pressable>
                       </View>
                       <View style={{ flexDirection: 'row', gap: 6, marginTop: spacing.sm }}>
-                        <Chip label="Ana" selected={it.assigned_to === 'ana'} onPress={() => updateItem(it.id, 'assigned_to', 'ana')} color={colors.ana} lightColor={colors.anaLight} />
+                        <Chip label="Silvia" selected={it.assigned_to === 'ana'} onPress={() => updateItem(it.id, 'assigned_to', 'ana')} color={colors.ana} lightColor={colors.anaLight} />
                         <Chip label="Daniel" selected={it.assigned_to === 'daniel'} onPress={() => updateItem(it.id, 'assigned_to', 'daniel')} color={colors.daniel} lightColor={colors.danielLight} />
                         <Chip label="Mitad" selected={it.assigned_to === 'half'} onPress={() => updateItem(it.id, 'assigned_to', 'half')} />
                       </View>
@@ -431,7 +509,7 @@ export default function GastosScreen() {
         </View>
       </Modal>
 
-      {/* Date picker modal (simple scrollable) */}
+      {/* Date picker modal */}
       <Modal visible={showDatePicker} transparent animationType="slide" onRequestClose={() => setShowDatePicker(false)}>
         <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' }}>
           <View style={{ backgroundColor: colors.card, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing.lg, paddingBottom: spacing.xl }}>
@@ -536,6 +614,15 @@ function ExpenseList() {
 
   useFocusEffectSafe(load);
 
+  async function handleDelete(expenseId: string) {
+    try {
+      await deleteExpense(expenseId);
+      setExpenses((prev) => prev.filter((item) => item.id !== expenseId));
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
   const filtered = expenses.filter((e) => {
     if (filter === 'all') return true;
     if (filter === 'daniel') return e.paid_by_person_id === DANIEL_ID;
@@ -571,7 +658,7 @@ function ExpenseList() {
       <View style={{ flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm }}>
         <Chip label="Todos" selected={filter === 'all'} onPress={() => setFilter('all')} />
         <Chip label="Daniel" selected={filter === 'daniel'} onPress={() => setFilter('daniel')} color={colors.daniel} lightColor={colors.danielLight} />
-        <Chip label="Ana" selected={filter === 'ana'} onPress={() => setFilter('ana')} color={colors.ana} lightColor={colors.anaLight} />
+        <Chip label="Silvia" selected={filter === 'ana'} onPress={() => setFilter('ana')} color={colors.ana} lightColor={colors.anaLight} />
       </View>
       {filtered.map((e) => {
         const person = PEOPLE[e.paid_by_person_id];
@@ -582,7 +669,12 @@ function ExpenseList() {
                 <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 15, color: colors.text }} numberOfLines={1}>{e.title}</Text>
                 <Text style={{ fontFamily: 'Inter-Regular', fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>{formatDate(e.expense_date)}</Text>
               </View>
-              <Text style={{ fontFamily: 'Inter-Bold', fontSize: 16, color: colors.text }}>{formatCOP(e.total_amount)}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                <Text style={{ fontFamily: 'Inter-Bold', fontSize: 16, color: colors.text }}>{formatCOP(e.total_amount)}</Text>
+                <Pressable onPress={() => handleDelete(e.id)} hitSlop={8}>
+                  <Trash2 color={colors.textMuted} size={17} strokeWidth={2} />
+                </Pressable>
+              </View>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm }}>
               <PersonBadge name={person?.name ?? ''} emoji={person?.emoji ?? ''} color={person?.color ?? colors.emerald} size="sm" />
@@ -623,12 +715,12 @@ function ExpenseDetails({ expense }: { expense: Expense }) {
           <Text style={{ fontFamily: 'Inter-Medium', fontSize: 11, color: colors.daniel }}>Daniel {formatCOP(danielShare)}</Text>
         </View>
         <View style={{ paddingHorizontal: spacing.xs + 2, paddingVertical: 3, borderRadius: radius.full, backgroundColor: colors.ana + '1a' }}>
-          <Text style={{ fontFamily: 'Inter-Medium', fontSize: 11, color: colors.ana }}>Ana {formatCOP(anaShare)}</Text>
+          <Text style={{ fontFamily: 'Inter-Medium', fontSize: 11, color: colors.ana }}>Silvia {formatCOP(anaShare)}</Text>
         </View>
         {delta !== 0 && (
           <View style={{ paddingHorizontal: spacing.xs + 2, paddingVertical: 3, borderRadius: radius.full, backgroundColor: delta > 0 ? colors.emeraldLight : colors.warningLight }}>
             <Text style={{ fontFamily: 'Inter-Medium', fontSize: 11, color: delta > 0 ? colors.emeraldDeep : colors.warning }}>
-              {delta > 0 ? 'Ana debe' : 'Daniel debe'} {formatCOP(Math.abs(delta))}
+              {delta > 0 ? 'Silvia debe' : 'Daniel debe'} {formatCOP(Math.abs(delta))}
             </Text>
           </View>
         )}
@@ -656,11 +748,9 @@ function ExpenseDetails({ expense }: { expense: Expense }) {
 
 function assignmentLabel(value: Assignment) {
   if (value === 'daniel') return 'Daniel';
-  if (value === 'ana') return 'Ana';
+  if (value === 'ana') return 'Silvia';
   return 'Mitad y mitad';
 }
-
-import { useFocusEffect } from 'expo-router';
 
 function useFocusEffectSafe(fn: () => void) {
   useFocusEffect(

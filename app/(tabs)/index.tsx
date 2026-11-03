@@ -1,12 +1,12 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
-import { Plus, ScanLine, Wallet, ChevronRight, TrendingDown, Scale } from 'lucide-react-native';
+import { Plus, ScanLine, Wallet, Scale } from 'lucide-react-native';
 import { Card, PersonBadge, SectionTitle } from '@/components/ui';
 import { colors, radius, shadows, spacing } from '@/lib/theme';
 import { formatCOP, formatDate, monthLabel } from '@/lib/format';
 import { fetchAccounts, fetchExpenses, computeBalance, describeBalance, computeShare } from '@/lib/finance';
-import { PEOPLE, PERSON_LIST } from '@/lib/people';
+import { PEOPLE } from '@/lib/people';
 import type { Account, Expense } from '@/lib/types';
 import { Header } from '@/components/Header';
 
@@ -41,14 +41,11 @@ export default function HomeScreen() {
   );
 
   const balanceInfo = describeBalance(balance);
-  const totalDebit = accounts
-    .filter((a) => a.type === 'debit' || a.type === 'savings')
-    .reduce((sum, a) => sum + a.balance, 0);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView contentContainerStyle={{ paddingHorizontal: spacing.md, paddingTop: spacing.lg, paddingBottom: spacing.xl + 40 }} showsVerticalScrollIndicator={false}>
-        <Header title="Finanzas" subtitle={`Hola Ana y Daniel · ${monthLabel(new Date())}`} />
+        <Header title="Finanzas" subtitle={`Hola Silvia y Daniel · ${monthLabel(new Date())}`} />
 
         {/* Balance card */}
         <View

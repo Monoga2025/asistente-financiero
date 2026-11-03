@@ -73,6 +73,8 @@ def people_maps() -> tuple[dict[int, dict[str, Any]], dict[str, dict[str, Any]]]
     people = fetch_all("select * from people order by id")
     by_id = {int(person["id"]): person for person in people}
     by_slug = {str(person["slug"]): person for person in people}
+    if "ana" in by_slug and "silvia" not in by_slug:
+        by_slug["silvia"] = by_slug["ana"]
     return by_id, by_slug
 
 
@@ -261,7 +263,9 @@ def create_receipt_draft(image_url: str | None, merchant: str | None, items: lis
 
 
 def normalize_assignment(value: str | None) -> str:
-    if value in {"ana", "daniel", "equal"}:
+    if value in {"ana", "silvia"}:
+        return "ana"
+    if value in {"daniel", "equal"}:
         return value
     if value == "half":
         return "equal"
@@ -274,6 +278,132 @@ def update_account_for_transaction(client, account_id: int, tx_type: str, amount
         return
     delta = account_delta(str(account.get("kind")), tx_type, amount)
     execute_write("update accounts set balance = %s where id = %s", (int(account.get("balance") or 0) + delta, account_id))
+
+
+def create_account(payload: dict[str, Any]) -> dict[str, Any]:
+    person_id = int(payload.get("personId") or payload.get("person_id") or 0)
+    if person_id not in {1, 2}:
+        raise ValueError("Persona invalida.")
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        raise ValueError("Nombre de cuenta obligatorio.")
+    kind = "credit" if payload.get("kind") == "credit" or payload.get("type") == "credit" else "debit"
+    bank = str(payload.get("bank") or payload.get("type") or "nequi").strip().lower()
+    db_type = "nu_credito" if kind == "credit" else ("nu_ahorros" if "nu" in bank else "nequi")
+    balance = round(float(payload.get("balance") or 0))
+    credit_limit = round(float(payload.get("creditLimit") or payload.get("credit_limit") or 0)) if kind == "credit" else None
+    cutoff_day = int(payload.get("cutoffDay") or payload.get("cutoff_day") or 15) if kind == "credit" else None
+    due_day = int(payload.get("dueDay") or payload.get("due_day") or 4) if kind == "credit" else None
+    is_default = bool(payload.get("isDefault") or payload.get("is_default") or False)
+
+    row = execute_returning(
+        """
+        insert into accounts (person_id, name, type, kind, balance, is_default, credit_limit, cutoff_day, due_day)
+        values (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        returning *
+        """,
+        (person_id, name, db_type, kind, balance, is_default, credit_limit, cutoff_day, due_day),
+    )
+    people_by_id, _ = people_maps()
+    return map_account(row, people_by_id)
+
+
+def update_account(account_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    existing = fetch_one("select * from accounts where id = %s", (account_id,))
+    if not existing:
+        raise ValueError("Cuenta no encontrada.")
+
+    name = str(payload.get("name") if payload.get("name") is not None else existing["name"]).strip()
+    if not name:
+        raise ValueError("Nombre de cuenta obligatorio.")
+    new_balance = round(float(payload["balance"])) if "balance" in payload and payload["balance"] is not None else int(existing["balance"])
+    credit_limit = (
+        round(float(payload["creditLimit"]))
+        if "creditLimit" in payload and payload["creditLimit"] is not None
+        else (round(float(payload["credit_limit"])) if "credit_limit" in payload and payload["credit_limit"] is not None else existing.get("credit_limit"))
+    )
+    cutoff_day = int(payload["cutoffDay"]) if "cutoffDay" in payload and payload["cutoffDay"] is not None else existing.get("cutoff_day")
+    due_day = int(payload["dueDay"]) if "dueDay" in payload and payload["dueDay"] is not None else existing.get("due_day")
+
+    old_balance = int(existing.get("balance") or 0)
+    diff = new_balance - old_balance
+
+    row = execute_returning(
+        """
+        update accounts
+        set name = %s, balance = %s, credit_limit = %s, cutoff_day = %s, due_day = %s
+        where id = %s
+        returning *
+        """,
+        (name, new_balance, credit_limit, cutoff_day, due_day, account_id),
+    )
+
+    if diff != 0:
+        tx_date = str(payload.get("date") or datetime.now(UTC).date().isoformat())
+        desc = str(payload.get("description") or ("Ajuste de cupo usado" if existing.get("kind") == "credit" else "Ajuste de saldo")).strip()
+        tx_amount = -diff if existing.get("kind") == "credit" else diff
+        execute_write(
+            """
+            insert into account_transactions (account_id, type, amount, description, date)
+            values (%s, 'reconciliation', %s, %s, %s)
+            """,
+            (account_id, tx_amount, desc, tx_date),
+        )
+
+    people_by_id, _ = people_maps()
+    return map_account(row, people_by_id)
+
+
+def record_account_movement(account_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    existing = fetch_one("select * from accounts where id = %s", (account_id,))
+    if not existing:
+        raise ValueError("Cuenta no encontrada.")
+
+    amount = round(float(payload.get("amount") or 0))
+    if amount <= 0:
+        raise ValueError("El monto debe ser mayor que cero.")
+    tx_type = str(payload.get("type") or "income")
+    if tx_type not in {"income", "expense", "payment"}:
+        raise ValueError("Tipo de movimiento invalido.")
+    description = str(payload.get("description") or ("Ingreso" if tx_type == "income" else "Movimiento")).strip()
+    tx_date = str(payload.get("date") or datetime.now(UTC).date().isoformat())
+
+    update_account_for_transaction(None, account_id, tx_type, amount)
+    signed_amount = amount if tx_type == "income" else -amount
+    execute_write(
+        """
+        insert into account_transactions (account_id, type, amount, description, date)
+        values (%s, %s, %s, %s, %s)
+        """,
+        (account_id, tx_type, signed_amount, description, tx_date),
+    )
+    updated = fetch_one("select * from accounts where id = %s", (account_id,))
+    people_by_id, _ = people_maps()
+    return map_account(updated or existing, people_by_id)
+
+
+def delete_expense(expense_id: int) -> bool:
+    expense = fetch_one("select * from expenses where id = %s", (expense_id,))
+    if not expense:
+        return False
+    account_id = expense.get("account_id")
+    total_amount = int(expense.get("total_amount") or 0)
+    notes = str(expense.get("notes") or "")
+    already_paid = notes.startswith("Historico:")
+
+    if account_id and not already_paid and total_amount > 0:
+        account = fetch_one("select * from accounts where id = %s", (int(account_id),))
+        if account:
+            # Reverse the expense effect on the account balance
+            reverse_delta = -account_delta(str(account.get("kind")), "expense", total_amount)
+            execute_write(
+                "update accounts set balance = %s where id = %s",
+                (int(account.get("balance") or 0) + reverse_delta, int(account_id)),
+            )
+            execute_write("delete from account_transactions where related_expense_id = %s", (expense_id,))
+
+    execute_write("delete from expenses where id = %s", (expense_id,))
+    return True
 
 
 def save_expense(payload: dict[str, Any]) -> dict[str, Any]:
@@ -306,6 +436,7 @@ def save_expense(payload: dict[str, Any]) -> dict[str, Any]:
         "by_items": "items",
         "all_daniel": "full_daniel",
         "all_ana": "full_ana",
+        "all_silvia": "full_ana",
     }.get(split_type, split_type)
     share_items = [{"amount": item["amount"], "assigned_to": item["assigned_to"]} for item in items]
     shares = compute_shares(total_amount, db_split_type, share_items)
@@ -364,7 +495,7 @@ def confirm_receipt(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("No se encontro la factura.")
 
     _people_by_id, people_by_slug = people_maps()
-    paid_by_slug = "ana" if payload.get("paidBy") == "ana" else "daniel"
+    paid_by_slug = "ana" if payload.get("paidBy") in {"ana", "silvia"} else "daniel"
     paid_by = people_by_slug.get(paid_by_slug)
     if not paid_by:
         raise ValueError("Persona invalida.")
@@ -469,7 +600,7 @@ def save_settlement(payload: dict[str, Any]) -> dict[str, Any]:
             insert into account_transactions (account_id, type, amount, description, date)
             values (%s, 'payment', %s, %s, %s)
             """,
-            (account_id, -amount, payload.get("note") or "Pago entre Ana y Daniel", settlement_date),
+            (account_id, -amount, payload.get("note") or "Pago entre Silvia y Daniel", settlement_date),
         )
 
     return {"settlementId": inserted["id"], "amount": amount}
