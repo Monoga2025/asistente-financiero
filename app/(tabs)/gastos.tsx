@@ -12,11 +12,13 @@ import {
 } from 'react-native';
 import {
   Calendar,
+  Calculator,
   Check,
   ChevronDown,
   Image as ImageIcon,
   Mic,
   MicOff,
+  Pencil,
   Percent,
   Plus,
   RefreshCw,
@@ -40,6 +42,7 @@ import {
   fetchRecurringExpenses,
   parseVoiceCommand,
   saveExpense,
+  updateRecurringExpense,
 } from '@/lib/finance';
 import { startVoiceDictation } from '@/lib/voice';
 import { PEOPLE, PERSON_LIST, DANIEL_ID, ANA_ID } from '@/lib/people';
@@ -79,6 +82,7 @@ export default function GastosScreen() {
 
   const [showAccountPicker, setShowAccountPicker] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showProportionalCalculator, setShowProportionalCalculator] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -457,8 +461,8 @@ export default function GastosScreen() {
                   <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 13, color: colors.text }}>
                     Porcentaje de división ({danielPct}% Daniel · {100 - danielPct}% Silvia)
                   </Text>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                    {[60, 70, 55, 40, 30].map((pct) => (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                    {[60, 70, 80, 85, 50, 40].map((pct) => (
                       <Chip
                         key={pct}
                         label={`${pct}% D / ${100 - pct}% S`}
@@ -466,6 +470,23 @@ export default function GastosScreen() {
                         onPress={() => setDanielPct(pct)}
                       />
                     ))}
+                    <Pressable
+                      onPress={() => setShowProportionalCalculator(true)}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 4,
+                        paddingHorizontal: 8,
+                        paddingVertical: 5,
+                        backgroundColor: colors.emeraldLight,
+                        borderRadius: radius.full,
+                      }}
+                    >
+                      <Calculator color={colors.emeraldDeep} size={13} strokeWidth={2} />
+                      <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 11, color: colors.emeraldDeep }}>
+                        Calcular por ingresos 💡
+                      </Text>
+                    </Pressable>
                   </View>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
                     <Text style={{ fontFamily: 'Inter-Bold', fontSize: 13, color: colors.daniel }}>
@@ -637,6 +658,13 @@ export default function GastosScreen() {
           </View>
         </View>
       </Modal>
+
+      <ProportionalCalculatorModal
+        visible={showProportionalCalculator}
+        onClose={() => setShowProportionalCalculator(false)}
+        onApplyRatio={(pct) => setDanielPct(pct)}
+        currentDanielPct={danielPct}
+      />
     </View>
   );
 }
@@ -717,7 +745,9 @@ function ExpenseList({ accounts }: { accounts: Account[] }) {
   const [recurring, setRecurring] = useState<RecurringExpense[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'daniel' | 'ana'>('all');
-  const [showNewRecurring, setShowNewRecurring] = useState(false);
+  const [showRecurringModal, setShowRecurringModal] = useState(false);
+  const [editingRecurring, setEditingRecurring] = useState<RecurringExpense | null>(null);
+  const [showProportionalCalculator, setShowProportionalCalculator] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -731,6 +761,22 @@ function ExpenseList({ accounts }: { accounts: Account[] }) {
       setLoading(false);
     }
   }, []);
+
+  async function handleApplyRatioToRecurring(pct: number) {
+    try {
+      await Promise.all(
+        recurring.map((r) =>
+          updateRecurringExpense(r.id, {
+            danielPct: pct,
+            splitType: pct === 50 ? 'half' : 'proportional',
+          }),
+        ),
+      );
+      await load();
+    } catch (e) {
+      console.error(e);
+    }
+  }
 
   useFocusEffectSafe(load);
 
@@ -812,12 +858,34 @@ function ExpenseList({ accounts }: { accounts: Account[] }) {
         <View style={{ gap: spacing.sm }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text style={{ fontFamily: 'Inter-Bold', fontSize: 17, color: colors.text }}>Pagos mensuales del hogar</Text>
-            <Pressable
-              onPress={() => setShowNewRecurring(true)}
-              style={{ backgroundColor: colors.emerald, paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.full }}
-            >
-              <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 12, color: '#fff' }}>+ Nuevo fijo</Text>
-            </Pressable>
+            <View style={{ flexDirection: 'row', gap: spacing.xs }}>
+              <Pressable
+                onPress={() => setShowProportionalCalculator(true)}
+                style={{
+                  backgroundColor: colors.emeraldLight,
+                  paddingHorizontal: spacing.sm + 4,
+                  paddingVertical: 6,
+                  borderRadius: radius.full,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+              >
+                <Calculator color={colors.emeraldDeep} size={13} strokeWidth={2} />
+                <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 12, color: colors.emeraldDeep }}>
+                  % Proporcional
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  setEditingRecurring(null);
+                  setShowRecurringModal(true);
+                }}
+                style={{ backgroundColor: colors.emerald, paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.full }}
+              >
+                <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 12, color: '#fff' }}>+ Nuevo fijo</Text>
+              </Pressable>
+            </View>
           </View>
           {recurring.map((r) => {
             const payer = PEOPLE[String(r.paid_by_person_id)];
@@ -833,9 +901,24 @@ function ExpenseList({ accounts }: { accounts: Account[] }) {
                   <Text style={{ fontFamily: 'Inter-Bold', fontSize: 16, color: colors.text }}>{formatCOP(r.amount)}</Text>
                 </View>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border }}>
-                  <Pressable onPress={() => handleDeleteRecurring(r.id)}>
-                    <Trash2 color={colors.textMuted} size={17} strokeWidth={2} />
-                  </Pressable>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+                    <Pressable
+                      onPress={() => {
+                        setEditingRecurring(r);
+                        setShowRecurringModal(true);
+                      }}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, paddingHorizontal: 6 }}
+                    >
+                      <Pencil color={colors.emerald} size={15} strokeWidth={2} />
+                      <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 12, color: colors.emerald }}>Editar</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => handleDeleteRecurring(r.id)}
+                      style={{ paddingVertical: 4, paddingHorizontal: 6 }}
+                    >
+                      <Trash2 color={colors.textMuted} size={15} strokeWidth={2} />
+                    </Pressable>
+                  </View>
                   <Pressable
                     onPress={() => handleApplyRecurring(r)}
                     style={{
@@ -854,13 +937,26 @@ function ExpenseList({ accounts }: { accounts: Account[] }) {
             );
           })}
 
-          <NewRecurringModal
-            visible={showNewRecurring}
-            onClose={() => setShowNewRecurring(false)}
-            onCreated={async () => {
-              setShowNewRecurring(false);
+          <RecurringModal
+            visible={showRecurringModal}
+            initialData={editingRecurring}
+            onClose={() => {
+              setShowRecurringModal(false);
+              setEditingRecurring(null);
+            }}
+            onSaved={async () => {
+              setShowRecurringModal(false);
+              setEditingRecurring(null);
               await load();
             }}
+          />
+
+          <ProportionalCalculatorModal
+            visible={showProportionalCalculator}
+            onClose={() => setShowProportionalCalculator(false)}
+            onApplyRatio={(pct) => handleApplyRatioToRecurring(pct)}
+            currentDanielPct={recurring[0]?.daniel_pct ?? 50}
+            onApplyToRecurring={handleApplyRatioToRecurring}
           />
         </View>
       ) : expenses.length === 0 ? (
@@ -926,7 +1022,17 @@ function ExpenseList({ accounts }: { accounts: Account[] }) {
   );
 }
 
-function NewRecurringModal({ visible, onClose, onCreated }: { visible: boolean; onClose: () => void; onCreated: () => Promise<void> }) {
+function RecurringModal({
+  visible,
+  initialData,
+  onClose,
+  onSaved,
+}: {
+  visible: boolean;
+  initialData?: RecurringExpense | null;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
   const [day, setDay] = useState('1');
@@ -934,21 +1040,46 @@ function NewRecurringModal({ visible, onClose, onCreated }: { visible: boolean; 
   const [danielPct, setDanielPct] = useState(50);
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    if (initialData) {
+      setTitle(initialData.title);
+      setAmount(String(initialData.amount));
+      setDay(String(initialData.day_of_month));
+      setPaidBy(String(initialData.paid_by_person_id));
+      setDanielPct(initialData.daniel_pct ?? 50);
+    } else {
+      setTitle('');
+      setAmount('');
+      setDay('1');
+      setPaidBy(DANIEL_ID);
+      setDanielPct(50);
+    }
+  }, [initialData, visible]);
+
   async function handleSave() {
     if (!title.trim() || parseCOP(amount) <= 0) return;
     setSaving(true);
     try {
-      await createRecurringExpense({
-        title: title.trim(),
-        amount: parseCOP(amount),
-        dayOfMonth: parseInt(day || '1', 10) || 1,
-        paidByPersonId: paidBy,
-        splitType: danielPct === 50 ? 'half' : 'proportional',
-        danielPct,
-      });
-      setTitle('');
-      setAmount('');
-      await onCreated();
+      if (initialData) {
+        await updateRecurringExpense(initialData.id, {
+          title: title.trim(),
+          amount: parseCOP(amount),
+          dayOfMonth: parseInt(day || '1', 10) || 1,
+          paidByPersonId: paidBy,
+          splitType: danielPct === 50 ? 'half' : 'proportional',
+          danielPct,
+        });
+      } else {
+        await createRecurringExpense({
+          title: title.trim(),
+          amount: parseCOP(amount),
+          dayOfMonth: parseInt(day || '1', 10) || 1,
+          paidByPersonId: paidBy,
+          splitType: danielPct === 50 ? 'half' : 'proportional',
+          danielPct,
+        });
+      }
+      await onSaved();
     } finally {
       setSaving(false);
     }
@@ -959,17 +1090,22 @@ function NewRecurringModal({ visible, onClose, onCreated }: { visible: boolean; 
       <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' }}>
         <View style={{ backgroundColor: colors.card, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing.lg, paddingBottom: spacing.xl, gap: spacing.sm }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={{ fontFamily: 'Inter-Bold', fontSize: 18, color: colors.text }}>Nuevo gasto fijo mensual</Text>
+            <Text style={{ fontFamily: 'Inter-Bold', fontSize: 18, color: colors.text }}>
+              {initialData ? 'Editar gasto fijo mensual' : 'Nuevo gasto fijo mensual'}
+            </Text>
             <Pressable onPress={onClose}><X color={colors.textSecondary} size={22} strokeWidth={2} /></Pressable>
           </View>
-          <TextInput value={title} onChangeText={setTitle} placeholder="Ej. Administración / Netflix / Luz" placeholderTextColor={colors.textMuted} style={inputStyle} />
+          <Text style={{ fontFamily: 'Inter-Regular', fontSize: 12, color: colors.textSecondary }}>
+            {initialData ? 'Edita el valor o condiciones sin tener que borrar la barra del gasto fijo.' : 'Agrega un pago periódico para registrarlo en 1 toque cada mes.'}
+          </Text>
+          <TextInput value={title} onChangeText={setTitle} placeholder="Ej. Arriendo Apartamento / Netflix / Luz" placeholderTextColor={colors.textMuted} style={inputStyle} />
           <TextInput
             value={amount ? formatCOP(parseCOP(amount)) : ''}
             onChangeText={(t) => setAmount(String(parseCOP(t)))}
             placeholder="Monto mensual ($0)"
             placeholderTextColor={colors.textMuted}
             keyboardType="numeric"
-            style={inputStyle}
+            style={[inputStyle, { fontFamily: 'Inter-Bold', fontSize: 16 }]}
           />
           <TextInput value={day} onChangeText={setDay} placeholder="Día de pago del mes (1-31)" keyboardType="numeric" style={inputStyle} />
           <View style={{ flexDirection: 'row', gap: spacing.sm }}>
@@ -978,11 +1114,236 @@ function NewRecurringModal({ visible, onClose, onCreated }: { visible: boolean; 
             ))}
           </View>
           <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
-            {[50, 60, 70, 40].map((pct) => (
+            {[50, 60, 70, 80, 85, 40].map((pct) => (
               <Chip key={pct} label={`${pct}% D / ${100 - pct}% S`} selected={danielPct === pct} onPress={() => setDanielPct(pct)} />
             ))}
           </View>
-          <Button label={saving ? 'Guardando...' : 'Guardar gasto fijo'} onPress={handleSave} fullWidth disabled={saving} />
+          <Button label={saving ? 'Guardando...' : initialData ? 'Guardar cambios' : 'Guardar gasto fijo'} onPress={handleSave} fullWidth disabled={saving} />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function ProportionalCalculatorModal({
+  visible,
+  onClose,
+  onApplyRatio,
+  currentDanielPct,
+  onApplyToRecurring,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onApplyRatio: (pct: number) => void;
+  currentDanielPct: number;
+  onApplyToRecurring?: (pct: number) => Promise<void>;
+}) {
+  const [danielIncome, setDanielIncome] = useState('1993000');
+  const [danielPersonalExpense, setDanielPersonalExpense] = useState('747350');
+  const [silviaIncome, setSilviaIncome] = useState('0');
+  const [silviaPersonalExpense, setSilviaPersonalExpense] = useState('0');
+  const [useNetCapacity, setUseNetCapacity] = useState(false);
+  const [applying, setApplying] = useState(false);
+
+  const numDanielInc = parseCOP(danielIncome);
+  const numDanielExp = parseCOP(danielPersonalExpense);
+  const numSilviaInc = parseCOP(silviaIncome);
+  const numSilviaExp = parseCOP(silviaPersonalExpense);
+
+  const danielCap = useNetCapacity ? Math.max(0, numDanielInc - numDanielExp) : numDanielInc;
+  const silviaCap = useNetCapacity ? Math.max(0, numSilviaInc - numSilviaExp) : numSilviaInc;
+  const totalCap = danielCap + silviaCap;
+
+  let calculatedDanielPct = 50;
+  if (totalCap > 0) {
+    calculatedDanielPct = Math.round((danielCap / totalCap) * 100);
+    calculatedDanielPct = Math.max(0, Math.min(100, calculatedDanielPct));
+  } else if (numDanielInc > 0 && numSilviaInc === 0) {
+    calculatedDanielPct = 100;
+  }
+  const calculatedSilviaPct = 100 - calculatedDanielPct;
+
+  const arriendo = 700000;
+  const danielArriendo = Math.round((arriendo * calculatedDanielPct) / 100);
+  const silviaArriendo = arriendo - danielArriendo;
+
+  const internet = 95000;
+  const danielInternet = Math.round((internet * calculatedDanielPct) / 100);
+  const silviaInternet = internet - danielInternet;
+
+  async function handleApply(alsoRecurring: boolean) {
+    setApplying(true);
+    try {
+      onApplyRatio(calculatedDanielPct);
+      if (alsoRecurring && onApplyToRecurring) {
+        await onApplyToRecurring(calculatedDanielPct);
+      }
+      onClose();
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}>
+        <View
+          style={{
+            backgroundColor: colors.card,
+            borderTopLeftRadius: radius.xl,
+            borderTopRightRadius: radius.xl,
+            padding: spacing.lg,
+            maxHeight: '90%',
+            gap: spacing.sm,
+          }}
+        >
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Calculator color={colors.emerald} size={22} strokeWidth={2} />
+              <Text style={{ fontFamily: 'Inter-Bold', fontSize: 17, color: colors.text }}>
+                Calculadora Proporcional por Ingresos
+              </Text>
+            </View>
+            <Pressable onPress={onClose}><X color={colors.textSecondary} size={22} strokeWidth={2} /></Pressable>
+          </View>
+
+          <Text style={{ fontFamily: 'Inter-Regular', fontSize: 12, color: colors.textSecondary }}>
+            Ajusta los aportes del hogar según los ingresos reales y la situación actual de Daniel y Silvia.
+          </Text>
+
+          <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
+            {/* Daniel Section */}
+            <View style={{ backgroundColor: colors.danielLight, padding: spacing.sm + 4, borderRadius: radius.md, marginBottom: spacing.sm, gap: 6 }}>
+              <Text style={{ fontFamily: 'Inter-Bold', fontSize: 13, color: colors.daniel }}>
+                Ingresos de Daniel (Mensual)
+              </Text>
+              <TextInput
+                value={danielIncome ? formatCOP(numDanielInc) : ''}
+                onChangeText={(t) => setDanielIncome(String(parseCOP(t)))}
+                placeholder="Ingreso mensual de Daniel"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="numeric"
+                style={[inputStyle, { backgroundColor: '#fff', fontFamily: 'Inter-SemiBold' }]}
+              />
+              <Text style={{ fontFamily: 'Inter-Regular', fontSize: 11, color: colors.textSecondary }}>
+                💡 Sugerido de tu Excel: $1.993.000 (Maral $1.643.000 + IA $150.000 + Trabajo $200.000)
+              </Text>
+              {useNetCapacity && (
+                <View style={{ marginTop: 4, gap: 4 }}>
+                  <Text style={{ fontFamily: 'Inter-Medium', fontSize: 12, color: colors.daniel }}>
+                    Gastos personales fijos de Daniel (Moto, estudio, etc.)
+                  </Text>
+                  <TextInput
+                    value={danielPersonalExpense ? formatCOP(numDanielExp) : ''}
+                    onChangeText={(t) => setDanielPersonalExpense(String(parseCOP(t)))}
+                    placeholder="Gastos personales ineludibles"
+                    keyboardType="numeric"
+                    style={[inputStyle, { backgroundColor: '#fff' }]}
+                  />
+                  <Text style={{ fontFamily: 'Inter-Regular', fontSize: 11, color: colors.textSecondary }}>
+                    Capacidad libre de Daniel: {formatCOP(danielCap)}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {/* Silvia Section */}
+            <View style={{ backgroundColor: colors.anaLight, padding: spacing.sm + 4, borderRadius: radius.md, marginBottom: spacing.sm, gap: 6 }}>
+              <Text style={{ fontFamily: 'Inter-Bold', fontSize: 13, color: colors.ana }}>
+                Ingresos / Remanente de Silvia
+              </Text>
+              <TextInput
+                value={silviaIncome ? formatCOP(numSilviaInc) : ''}
+                onChangeText={(t) => setSilviaIncome(String(parseCOP(t)))}
+                placeholder="Lo que quedó de nómina / liquidación ($0)"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="numeric"
+                style={[inputStyle, { backgroundColor: '#fff', fontFamily: 'Inter-SemiBold' }]}
+              />
+              <Text style={{ fontFamily: 'Inter-Regular', fontSize: 11, color: colors.textSecondary }}>
+                {numSilviaInc === 0
+                  ? 'Silvia actualmente sin ingresos: Daniel asume el 100% de los gastos del hogar.'
+                  : `Silvia aporta de su remanente disponible: ${formatCOP(numSilviaInc)}`}
+              </Text>
+              {useNetCapacity && (
+                <View style={{ marginTop: 4, gap: 4 }}>
+                  <Text style={{ fontFamily: 'Inter-Medium', fontSize: 12, color: colors.ana }}>
+                    Gastos personales ineludibles de Silvia
+                  </Text>
+                  <TextInput
+                    value={silviaPersonalExpense ? formatCOP(numSilviaExp) : ''}
+                    onChangeText={(t) => setSilviaPersonalExpense(String(parseCOP(t)))}
+                    placeholder="Gastos indispensables de Silvia"
+                    keyboardType="numeric"
+                    style={[inputStyle, { backgroundColor: '#fff' }]}
+                  />
+                </View>
+              )}
+            </View>
+
+            {/* Toggle Net Capacity */}
+            <Pressable
+              onPress={() => setUseNetCapacity(!useNetCapacity)}
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6, marginBottom: spacing.sm }}
+            >
+              <Text style={{ fontFamily: 'Inter-Medium', fontSize: 12, color: colors.textSecondary }}>
+                Restar gastos personales (cuota moto, estudio) antes de repartir
+              </Text>
+              <Text style={{ fontFamily: 'Inter-Bold', fontSize: 12, color: colors.emerald }}>
+                {useNetCapacity ? 'Activado' : 'Desactivado'}
+              </Text>
+            </Pressable>
+
+            {/* Result Card */}
+            <Card style={{ backgroundColor: colors.bg, borderWidth: 1.5, borderColor: colors.emerald, gap: 8 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 14, color: colors.text }}>
+                  Proporción calculada justa:
+                </Text>
+                <View style={{ paddingHorizontal: spacing.sm + 4, paddingVertical: 4, borderRadius: radius.full, backgroundColor: colors.emerald }}>
+                  <Text style={{ fontFamily: 'Inter-Bold', fontSize: 14, color: '#fff' }}>
+                    {calculatedDanielPct}% D / {calculatedSilviaPct}% S
+                  </Text>
+                </View>
+              </View>
+
+              <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 2 }} />
+
+              <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 12, color: colors.textSecondary }}>
+                Ejemplo con los gastos reales de su hogar:
+              </Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={{ fontFamily: 'Inter-Medium', fontSize: 13, color: colors.text }}>Arriendo ($700.000):</Text>
+                <Text style={{ fontFamily: 'Inter-Bold', fontSize: 13, color: colors.text }}>
+                  D: {formatCOP(danielArriendo)} | S: {formatCOP(silviaArriendo)}
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={{ fontFamily: 'Inter-Medium', fontSize: 13, color: colors.text }}>Internet ($95.000):</Text>
+                <Text style={{ fontFamily: 'Inter-Bold', fontSize: 13, color: colors.text }}>
+                  D: {formatCOP(danielInternet)} | S: {formatCOP(silviaInternet)}
+                </Text>
+              </View>
+            </Card>
+          </ScrollView>
+
+          <View style={{ gap: spacing.xs, marginTop: spacing.xs }}>
+            <Button
+              label={applying ? 'Aplicando...' : `Aplicar ${calculatedDanielPct}% / ${calculatedSilviaPct}% en este gasto`}
+              onPress={() => handleApply(false)}
+              fullWidth
+              disabled={applying}
+            />
+            {onApplyToRecurring && (
+              <Button
+                label="Aplicar a TODOS los Gastos Fijos (Arriendo, etc.)"
+                onPress={() => handleApply(true)}
+                variant="secondary"
+                fullWidth
+                disabled={applying}
+              />
+            )}
+          </View>
         </View>
       </View>
     </Modal>

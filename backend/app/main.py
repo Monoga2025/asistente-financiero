@@ -33,6 +33,7 @@ from .db import (
     save_settlement,
     update_account,
     update_goal,
+    update_recurring_expense,
     upload_receipt_image,
 )
 from .expense_text import parse_expenses_text, parse_voice_expense_command
@@ -264,6 +265,13 @@ def create_app() -> FastAPI:
             return {"ok": True, "recurring": create_recurring_expense(payload)}
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.put("/api/recurring/{recurring_id}", dependencies=[Depends(require_app_token)])
+    def put_recurring(recurring_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        rec = update_recurring_expense(recurring_id, payload)
+        if not rec:
+            raise HTTPException(status_code=404, detail="Gasto fijo no encontrado.")
+        return {"ok": True, "recurring": rec}
 
     @app.delete("/api/recurring/{recurring_id}", dependencies=[Depends(require_app_token)])
     def remove_recurring(recurring_id: int) -> dict[str, Any]:

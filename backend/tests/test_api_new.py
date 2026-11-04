@@ -74,3 +74,15 @@ def test_month_close_endpoint(client, monkeypatch):
     assert body["summary"]["total"] == 700_000
     assert body["summary"]["top_category"] == "Vivienda"
     assert client.get("/api/month-close?year=2026&month=13", headers=HEADERS).status_code == 422
+
+
+def test_recurring_update_and_create(client, monkeypatch):
+    updated = {}
+    monkeypatch.setattr(
+        main,
+        "update_recurring_expense",
+        lambda rid, payload: updated.update({"id": rid, **payload}) or {"id": rid, "title": "Arriendo", "amount": 700000, **payload},
+    )
+    res = client.put("/api/recurring/1", json={"amount": 700000}, headers=HEADERS)
+    assert res.status_code == 200
+    assert res.json()["recurring"]["amount"] == 700000

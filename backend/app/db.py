@@ -24,7 +24,7 @@ def _use_local_store() -> bool:
 
 def _default_recurring() -> list[dict[str, Any]]:
     return [
-        {"id": 1, "title": "Arriendo", "amount": 1000000, "day_of_month": 1, "paid_by_person_id": 2, "split_type": "half", "daniel_pct": 50, "category": "Vivienda"},
+        {"id": 1, "title": "Arriendo Apartamento", "amount": 700000, "day_of_month": 1, "paid_by_person_id": 2, "split_type": "half", "daniel_pct": 50, "category": "Vivienda"},
         {"id": 2, "title": "Internet Hogar", "amount": 95000, "day_of_month": 5, "paid_by_person_id": 2, "split_type": "half", "daniel_pct": 50, "category": "Vivienda"},
         {"id": 3, "title": "Servicios Públicos (Luz y Agua)", "amount": 180000, "day_of_month": 15, "paid_by_person_id": 1, "split_type": "half", "daniel_pct": 50, "category": "Vivienda"},
     ]
@@ -1035,6 +1035,65 @@ def create_recurring_expense(payload: dict[str, Any]) -> dict[str, Any]:
         returning *
         """,
         (title, amount, day_of_month, paid_by_person_id, split_type, daniel_pct, category),
+    )
+
+
+def update_recurring_expense(recurring_id: int, payload: dict[str, Any]) -> dict[str, Any] | None:
+    if _use_local_store():
+        state = _load_local()
+        rec = next((r for r in state.get("recurring_expenses", []) if int(r["id"]) == int(recurring_id)), None)
+        if not rec:
+            return None
+        if "title" in payload and payload["title"] is not None:
+            title = str(payload["title"]).strip()
+            if title:
+                rec["title"] = title
+        if "amount" in payload and payload["amount"] is not None:
+            rec["amount"] = round(float(payload["amount"]))
+        if "dayOfMonth" in payload or "day_of_month" in payload:
+            raw_day = payload.get("dayOfMonth") if "dayOfMonth" in payload else payload.get("day_of_month")
+            rec["day_of_month"] = max(1, min(31, int(raw_day or 1)))
+        if "paidByPersonId" in payload or "paid_by_person_id" in payload:
+            raw_paid = payload.get("paidByPersonId") if "paidByPersonId" in payload else payload.get("paid_by_person_id")
+            rec["paid_by_person_id"] = int(raw_paid or 2)
+        if "splitType" in payload or "split_type" in payload:
+            rec["split_type"] = str(payload.get("splitType") or payload.get("split_type") or "half")
+        if "danielPct" in payload or "daniel_pct" in payload:
+            raw_pct = payload.get("danielPct") if "danielPct" in payload else payload.get("daniel_pct")
+            rec["daniel_pct"] = max(0, min(100, int(raw_pct if raw_pct is not None else 50)))
+        if "category" in payload and payload["category"] is not None:
+            rec["category"] = str(payload["category"])
+        _save_local(state)
+        return rec
+
+    allowed = {
+        "title": "title",
+        "amount": "amount",
+        "day_of_month": "day_of_month",
+        "dayOfMonth": "day_of_month",
+        "paid_by_person_id": "paid_by_person_id",
+        "paidByPersonId": "paid_by_person_id",
+        "split_type": "split_type",
+        "splitType": "split_type",
+        "daniel_pct": "daniel_pct",
+        "danielPct": "daniel_pct",
+        "category": "category",
+    }
+    updates = {}
+    for k, col in allowed.items():
+        if k in payload and col not in updates:
+            val = payload[k]
+            if col == "amount":
+                val = round(float(val))
+            elif col in {"day_of_month", "paid_by_person_id", "daniel_pct"}:
+                val = int(val)
+            updates[col] = val
+    if not updates:
+        return fetch_one("select * from recurring_expenses where id = %s", (recurring_id,))
+    assignments = ", ".join(f"{col} = %s" for col in updates)
+    return fetch_one_write(
+        f"update recurring_expenses set {assignments} where id = %s returning *",
+        tuple(updates.values()) + (recurring_id,),
     )
 
 

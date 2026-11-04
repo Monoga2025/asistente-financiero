@@ -165,6 +165,22 @@ export async function createRecurringExpense(input: {
   return data.recurring;
 }
 
+export async function updateRecurringExpense(
+  id: number,
+  input: Partial<{
+    title: string;
+    amount: number;
+    dayOfMonth: number;
+    paidByPersonId: string;
+    splitType: SplitType;
+    danielPct?: number;
+    category?: string;
+  }>,
+): Promise<RecurringExpense> {
+  const data = await apiPut<{ recurring: RecurringExpense }>(`/api/recurring/${id}`, input);
+  return data.recurring;
+}
+
 export async function deleteRecurringExpense(id: number): Promise<void> {
   await apiDelete(`/api/recurring/${id}`);
 }
