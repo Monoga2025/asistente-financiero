@@ -1,0 +1,323 @@
+{
+  "people": [
+    {
+      "id": 1,
+      "slug": "ana",
+      "name": "Silvia",
+      "color": "#e0578e",
+      "created_at": "2026-08-01T00:00:00"
+    },
+    {
+      "id": 2,
+      "slug": "daniel",
+      "name": "Daniel",
+      "color": "#2f6fed",
+      "created_at": "2026-08-01T00:00:00"
+    }
+  ],
+  "accounts": [
+    {
+      "id": 1,
+      "person_id": 1,
+      "name": "Nequi Silvia",
+      "type": "nequi",
+      "kind": "debit",
+      "balance": 929000,
+      "is_default": true,
+      "credit_limit": null,
+      "cutoff_day": null,
+      "due_day": null,
+      "created_at": "2026-08-01T00:00:00"
+    },
+    {
+      "id": 2,
+      "person_id": 1,
+      "name": "Nu Ahorros Silvia",
+      "type": "nu_ahorros",
+      "kind": "debit",
+      "balance": 0,
+      "is_default": false,
+      "credit_limit": null,
+      "cutoff_day": null,
+      "due_day": null,
+      "created_at": "2026-08-01T00:00:00"
+    },
+    {
+      "id": 3,
+      "person_id": 2,
+      "name": "Nequi Daniel",
+      "type": "nequi",
+      "kind": "debit",
+      "balance": 575158,
+      "is_default": true,
+      "credit_limit": null,
+      "cutoff_day": null,
+      "due_day": null,
+      "created_at": "2026-08-01T00:00:00"
+    },
+    {
+      "id": 4,
+      "person_id": 2,
+      "name": "Nu Ahorros Daniel",
+      "type": "nu_ahorros",
+      "kind": "debit",
+      "balance": 0,
+      "is_default": false,
+      "credit_limit": null,
+      "cutoff_day": null,
+      "due_day": null,
+      "created_at": "2026-08-01T00:00:00"
+    },
+    {
+      "id": 5,
+      "person_id": 2,
+      "name": "Nu Crédito Daniel",
+      "type": "nu_credito",
+      "kind": "credit",
+      "balance": 0,
+      "is_default": false,
+      "credit_limit": 1000000,
+      "cutoff_day": 15,
+      "due_day": 4,
+      "created_at": "2026-08-01T00:00:00"
+    },
+    {
+      "id": 6,
+      "person_id": 1,
+      "name": "Nu Crédito Silvia",
+      "type": "nu_credito",
+      "kind": "credit",
+      "balance": 0,
+      "is_default": false,
+      "credit_limit": 1000000,
+      "cutoff_day": 15,
+      "due_day": 4,
+      "created_at": "2026-11-03T22:00:38"
+    }
+  ],
+  "expenses": [
+    {
+      "id": 1,
+      "title": "pollol cacareo",
+      "total_amount": 19000,
+      "date": "2026-11-09",
+      "paid_by_person_id": 2,
+      "account_id": 3,
+      "split_type": "full_ana",
+      "share_ana": 19000,
+      "share_daniel": 0,
+      "surcharge_amount": 0,
+      "surcharge_split_type": "equal",
+      "notes": "Historico: ya estaba pagado",
+      "receipt_image_url": null,
+      "source": "manual",
+      "created_at": "2026-11-10T00:01:24.700805+00:00"
+    },
+    {
+      "id": 2,
+      "title": "discoteca",
+      "total_amount": 176000,
+      "date": "2026-11-09",
+      "paid_by_person_id": 2,
+      "account_id": 3,
+      "split_type": "equal",
+      "share_ana": 35200,
+      "share_daniel": 140800,
+      "surcharge_amount": 0,
+      "surcharge_split_type": "equal",
+      "notes": "Historico: ya estaba pagado",
+      "receipt_image_url": null,
+      "source": "manual",
+      "created_at": "2026-11-10T00:02:19.367187+00:00"
+    },
+    {
+      "id": 3,
+      "title": "casa china",
+      "total_amount": 54000,
+      "date": "2026-11-09",
+      "paid_by_person_id": 2,
+      "account_id": 3,
+      "split_type": "equal",
+      "share_ana": 27000,
+      "share_daniel": 27000,
+      "surcharge_amount": 0,
+      "surcharge_split_type": "equal",
+      "notes": "Historico: ya estaba pagado",
+      "receipt_image_url": null,
+      "source": "manual",
+      "created_at": "2026-11-10T00:02:46.555832+00:00"
+    },
+    {
+      "id": 4,
+      "title": "fruber",
+      "total_amount": 36400,
+      "date": "2026-11-09",
+      "paid_by_person_id": 2,
+      "account_id": 3,
+      "split_type": "equal",
+      "share_ana": 18200,
+      "share_daniel": 18200,
+      "surcharge_amount": 0,
+      "surcharge_split_type": "equal",
+      "notes": "Historico: ya estaba pagado",
+      "receipt_image_url": null,
+      "source": "manual",
+      "created_at": "2026-11-10T00:03:15.096522+00:00"
+    },
+    {
+      "id": 5,
+      "title": "MACNODNALS",
+      "total_amount": 45000,
+      "date": "2026-11-09",
+      "paid_by_person_id": 2,
+      "account_id": 1,
+      "split_type": "equal",
+      "share_ana": 22500,
+      "share_daniel": 22500,
+      "surcharge_amount": 0,
+      "surcharge_split_type": "equal",
+      "notes": "Historico: ya estaba pagado",
+      "receipt_image_url": null,
+      "source": "manual",
+      "created_at": "2026-11-10T00:49:34.611300+00:00"
+    },
+    {
+      "id": 6,
+      "title": "MERCADO EXITO EXEDENTE",
+      "total_amount": 71000,
+      "date": "2026-11-09",
+      "paid_by_person_id": 2,
+      "account_id": 1,
+      "split_type": "equal",
+      "share_ana": 35500,
+      "share_daniel": 35500,
+      "surcharge_amount": 0,
+      "surcharge_split_type": "equal",
+      "notes": null,
+      "receipt_image_url": null,
+      "source": "manual",
+      "created_at": "2026-11-10T00:49:59.856722+00:00"
+    }
+  ],
+  "expense_items": [],
+  "settlements": [
+    {
+      "id": 1,
+      "from_person_id": 2,
+      "to_person_id": 1,
+      "amount": 50000,
+      "account_id": 3,
+      "to_account_id": 1,
+      "date": "2026-11-01",
+      "note": "Daniel le da a Silvia ($50.000 registrados en planilla de Silvia)",
+      "created_at": "2026-11-01T12:00:00"
+    }
+  ],
+  "account_transactions": [
+    {
+      "id": 1,
+      "account_id": 3,
+      "type": "reconciliation",
+      "amount": 655394,
+      "description": "Saldo real en Nequi Daniel",
+      "date": "2026-11-01",
+      "related_expense_id": null,
+      "created_at": "2026-11-01T00:00:00"
+    },
+    {
+      "id": 2,
+      "account_id": 1,
+      "type": "reconciliation",
+      "amount": 1543896,
+      "description": "Saldo real en Nequi Silvia",
+      "date": "2026-11-01",
+      "related_expense_id": null,
+      "created_at": "2026-11-01T00:00:00"
+    },
+    {
+      "id": 3,
+      "account_id": 2,
+      "type": "reconciliation",
+      "amount": 555313,
+      "description": "Saldo real en Nu Ahorros Silvia",
+      "date": "2026-11-01",
+      "related_expense_id": null,
+      "created_at": "2026-11-01T00:00:00"
+    },
+    {
+      "id": 4,
+      "account_id": 2,
+      "type": "reconciliation",
+      "amount": -555313,
+      "description": "Ajuste de saldo inicial",
+      "date": "2026-11-09",
+      "related_expense_id": null,
+      "created_at": "2026-11-09T23:44:28.550157+00:00"
+    },
+    {
+      "id": 5,
+      "account_id": 1,
+      "type": "reconciliation",
+      "amount": -543896,
+      "description": "Ajuste de saldo inicial",
+      "date": "2026-11-09",
+      "related_expense_id": null,
+      "created_at": "2026-11-09T23:44:45.939804+00:00"
+    },
+    {
+      "id": 6,
+      "account_id": 3,
+      "type": "reconciliation",
+      "amount": -815236,
+      "description": "Ajuste de saldo inicial",
+      "date": "2026-11-09",
+      "related_expense_id": null,
+      "created_at": "2026-11-09T23:46:21.642935+00:00"
+    },
+    {
+      "id": 7,
+      "account_id": 1,
+      "type": "reconciliation",
+      "amount": -543678,
+      "description": "Ajuste de saldo inicial",
+      "date": "2026-11-09",
+      "related_expense_id": null,
+      "created_at": "2026-11-09T23:46:42.013873+00:00"
+    },
+    {
+      "id": 8,
+      "account_id": 1,
+      "type": "expense",
+      "amount": -71000,
+      "description": "MERCADO EXITO EXEDENTE",
+      "date": "2026-11-09",
+      "related_expense_id": 6,
+      "created_at": "2026-11-10T00:49:59.856782+00:00"
+    }
+  ],
+  "receipt_drafts": [],
+  "receipt_blobs": [],
+  "goals": [],
+  "recurring_expenses": [
+    {
+      "id": 1,
+      "title": "Arriendo Apartamento",
+      "amount": 700000,
+      "day_of_month": 1,
+      "paid_by_person_id": 2,
+      "split_type": "half",
+      "daniel_pct": 50,
+      "category": "Vivienda"
+    },
+    {
+      "id": 2,
+      "title": "Plan de Movistar",
+      "amount": 23949,
+      "day_of_month": 1,
+      "paid_by_person_id": 1,
+      "split_type": "all_ana",
+      "daniel_pct": 0,
+      "category": "Personal Silvia"
+    }
+  ]
+}
