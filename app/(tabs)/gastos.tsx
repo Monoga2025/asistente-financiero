@@ -745,6 +745,7 @@ function ExpenseList({ accounts }: { accounts: Account[] }) {
   const [recurring, setRecurring] = useState<RecurringExpense[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'daniel' | 'ana'>('all');
+  const [recurringFilter, setRecurringFilter] = useState<'all' | 'shared' | 'ana' | 'daniel'>('all');
   const [showRecurringModal, setShowRecurringModal] = useState(false);
   const [editingRecurring, setEditingRecurring] = useState<RecurringExpense | null>(null);
   const [showProportionalCalculator, setShowProportionalCalculator] = useState(false);
@@ -762,15 +763,38 @@ function ExpenseList({ accounts }: { accounts: Account[] }) {
     }
   }, []);
 
+  function isPersonalSilvia(r: RecurringExpense) {
+    return (
+      r.split_type === 'all_ana' ||
+      r.split_type === 'all_silvia' ||
+      r.split_type === 'full_ana' ||
+      (r.paid_by_person_id === 1 && r.daniel_pct === 0)
+    );
+  }
+
+  function isPersonalDaniel(r: RecurringExpense) {
+    return (
+      r.split_type === 'all_daniel' ||
+      r.split_type === 'full_daniel' ||
+      (r.paid_by_person_id === 2 && r.daniel_pct === 100)
+    );
+  }
+
+  function isSharedExpense(r: RecurringExpense) {
+    return !isPersonalSilvia(r) && !isPersonalDaniel(r);
+  }
+
   async function handleApplyRatioToRecurring(pct: number) {
     try {
       await Promise.all(
-        recurring.map((r) =>
-          updateRecurringExpense(r.id, {
-            danielPct: pct,
-            splitType: pct === 50 ? 'half' : 'proportional',
-          }),
-        ),
+        recurring
+          .filter(isSharedExpense)
+          .map((r) =>
+            updateRecurringExpense(r.id, {
+              danielPct: pct,
+              splitType: pct === 50 ? 'half' : 'proportional',
+            }),
+          ),
       );
       await load();
     } catch (e) {
@@ -807,6 +831,15 @@ function ExpenseList({ accounts }: { accounts: Account[] }) {
     if (filter === 'daniel') return e.paid_by_person_id === DANIEL_ID;
     return e.paid_by_person_id === ANA_ID;
   });
+
+  const filteredRecurring = recurring.filter((r) => {
+    if (recurringFilter === 'shared') return isSharedExpense(r);
+    if (recurringFilter === 'ana') return isPersonalSilvia(r);
+    if (recurringFilter === 'daniel') return isPersonalDaniel(r);
+    return true;
+  });
+
+  const totalRecurringFiltered = filteredRecurring.reduce((sum, r) => sum + (r.amount || 0), 0);
 
   if (loading) {
     return (
@@ -857,7 +890,18 @@ function ExpenseList({ accounts }: { accounts: Account[] }) {
       {viewMode === 'recurring' ? (
         <View style={{ gap: spacing.sm }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={{ fontFamily: 'Inter-Bold', fontSize: 17, color: colors.text }}>Pagos mensuales del hogar</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontFamily: 'Inter-Bold', fontSize: 17, color: colors.text }}>Gastos Fijos Mensuales</Text>
+              <Text style={{ fontFamily: 'Inter-Regular', fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>
+                {recurringFilter === 'all'
+                  ? `Total mensual: ${formatCOP(totalRecurringFiltered)}`
+                  : recurringFilter === 'shared'
+                  ? `Hogar compartido: ${formatCOP(totalRecurringFiltered)}`
+                  : recurringFilter === 'ana'
+                  ? `Personal Silvia: ${formatCOP(totalRecurringFiltered)}`
+                  : `Personal Daniel: ${formatCOP(totalRecurringFiltered)}`}
+              </Text>
+            </View>
             <View style={{ flexDirection: 'row', gap: spacing.xs }}>
               <Pressable
                 onPress={() => setShowProportionalCalculator(true)}
@@ -887,55 +931,115 @@ function ExpenseList({ accounts }: { accounts: Account[] }) {
               </Pressable>
             </View>
           </View>
-          {recurring.map((r) => {
-            const payer = PEOPLE[String(r.paid_by_person_id)];
-            return (
-              <Card key={r.id}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontFamily: 'Inter-Bold', fontSize: 15, color: colors.text }}>{r.title}</Text>
-                    <Text style={{ fontFamily: 'Inter-Regular', fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
-                      Día {r.day_of_month} de cada mes · Paga {payer?.name} ({r.daniel_pct}% D / {100 - r.daniel_pct}% S)
-                    </Text>
+
+          {/* Sub-filtros para clasificar fijos */}
+          <View style={{ flexDirection: 'row', gap: spacing.xs, flexWrap: 'wrap' }}>
+            <Chip
+              label={`Todos (${recurring.length})`}
+              selected={recurringFilter === 'all'}
+              onPress={() => setRecurringFilter('all')}
+            />
+            <Chip
+              label={`🏡 Hogar (${recurring.filter(isSharedExpense).length})`}
+              selected={recurringFilter === 'shared'}
+              onPress={() => setRecurringFilter('shared')}
+              color={colors.emerald}
+              lightColor={colors.emeraldLight}
+            />
+            <Chip
+              label={`🌸 Silvia (${recurring.filter(isPersonalSilvia).length})`}
+              selected={recurringFilter === 'ana'}
+              onPress={() => setRecurringFilter('ana')}
+              color={colors.ana}
+              lightColor={colors.anaLight}
+            />
+            <Chip
+              label={`🏍️ Daniel (${recurring.filter(isPersonalDaniel).length})`}
+              selected={recurringFilter === 'daniel'}
+              onPress={() => setRecurringFilter('daniel')}
+              color={colors.daniel}
+              lightColor={colors.danielLight}
+            />
+          </View>
+
+          {filteredRecurring.length === 0 ? (
+            <Card style={{ alignItems: 'center', paddingVertical: spacing.lg }}>
+              <Text style={{ fontFamily: 'Inter-Medium', fontSize: 14, color: colors.textSecondary }}>
+                No hay gastos fijos en este filtro
+              </Text>
+            </Card>
+          ) : (
+            filteredRecurring.map((r) => {
+              const payer = PEOPLE[String(r.paid_by_person_id)];
+              const isSilvia = isPersonalSilvia(r);
+              const isDaniel = isPersonalDaniel(r);
+              return (
+                <Card key={r.id}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <View style={{ flex: 1, paddingRight: spacing.sm }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+                        <Text style={{ fontFamily: 'Inter-Bold', fontSize: 15, color: colors.text }}>{r.title}</Text>
+                        {isSilvia ? (
+                          <View style={{ backgroundColor: colors.anaLight, paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.full }}>
+                            <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 10, color: colors.ana }}>🌸 Personal Silvia (100%)</Text>
+                          </View>
+                        ) : isDaniel ? (
+                          <View style={{ backgroundColor: colors.danielLight, paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.full }}>
+                            <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 10, color: colors.daniel }}>🏍️ Personal Daniel (100%)</Text>
+                          </View>
+                        ) : (
+                          <View style={{ backgroundColor: colors.emeraldLight, paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.full }}>
+                            <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 10, color: colors.emeraldDeep }}>🏡 Compartido</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={{ fontFamily: 'Inter-Regular', fontSize: 12, color: colors.textSecondary }}>
+                        {isSilvia
+                          ? `Día ${r.day_of_month} de cada mes · Paga Silvia (Gasto personal, sin cruce)`
+                          : isDaniel
+                          ? `Día ${r.day_of_month} de cada mes · Paga Daniel (Gasto personal, sin cruce)`
+                          : `Día ${r.day_of_month} de cada mes · Paga ${payer?.name} (${r.daniel_pct}% D / ${100 - r.daniel_pct}% S)`}
+                      </Text>
+                    </View>
+                    <Text style={{ fontFamily: 'Inter-Bold', fontSize: 16, color: colors.text }}>{formatCOP(r.amount)}</Text>
                   </View>
-                  <Text style={{ fontFamily: 'Inter-Bold', fontSize: 16, color: colors.text }}>{formatCOP(r.amount)}</Text>
-                </View>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+                      <Pressable
+                        onPress={() => {
+                          setEditingRecurring(r);
+                          setShowRecurringModal(true);
+                        }}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, paddingHorizontal: 6 }}
+                      >
+                        <Pencil color={colors.emerald} size={15} strokeWidth={2} />
+                        <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 12, color: colors.emerald }}>Editar</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => handleDeleteRecurring(r.id)}
+                        style={{ paddingVertical: 4, paddingHorizontal: 6 }}
+                      >
+                        <Trash2 color={colors.textMuted} size={15} strokeWidth={2} />
+                      </Pressable>
+                    </View>
                     <Pressable
-                      onPress={() => {
-                        setEditingRecurring(r);
-                        setShowRecurringModal(true);
+                      onPress={() => handleApplyRecurring(r)}
+                      style={{
+                        backgroundColor: isSilvia ? colors.anaLight : isDaniel ? colors.danielLight : colors.emeraldLight,
+                        paddingHorizontal: spacing.md,
+                        paddingVertical: 6,
+                        borderRadius: radius.full,
                       }}
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, paddingHorizontal: 6 }}
                     >
-                      <Pencil color={colors.emerald} size={15} strokeWidth={2} />
-                      <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 12, color: colors.emerald }}>Editar</Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => handleDeleteRecurring(r.id)}
-                      style={{ paddingVertical: 4, paddingHorizontal: 6 }}
-                    >
-                      <Trash2 color={colors.textMuted} size={15} strokeWidth={2} />
+                      <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 12, color: isSilvia ? colors.ana : isDaniel ? colors.daniel : colors.emeraldDeep }}>
+                        Registrar en este mes →
+                      </Text>
                     </Pressable>
                   </View>
-                  <Pressable
-                    onPress={() => handleApplyRecurring(r)}
-                    style={{
-                      backgroundColor: colors.emeraldLight,
-                      paddingHorizontal: spacing.md,
-                      paddingVertical: 6,
-                      borderRadius: radius.full,
-                    }}
-                  >
-                    <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 12, color: colors.emeraldDeep }}>
-                      Registrar en este mes →
-                    </Text>
-                  </Pressable>
-                </View>
-              </Card>
-            );
-          })}
+                </Card>
+              );
+            })
+          )}
 
           <RecurringModal
             visible={showRecurringModal}
@@ -955,7 +1059,7 @@ function ExpenseList({ accounts }: { accounts: Account[] }) {
             visible={showProportionalCalculator}
             onClose={() => setShowProportionalCalculator(false)}
             onApplyRatio={(pct) => handleApplyRatioToRecurring(pct)}
-            currentDanielPct={recurring[0]?.daniel_pct ?? 50}
+            currentDanielPct={recurring.find(isSharedExpense)?.daniel_pct ?? 50}
             onApplyToRecurring={handleApplyRatioToRecurring}
           />
         </View>
@@ -1036,6 +1140,7 @@ function RecurringModal({
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
   const [day, setDay] = useState('1');
+  const [scope, setScope] = useState<'shared' | 'ana' | 'daniel'>('shared');
   const [paidBy, setPaidBy] = useState(DANIEL_ID);
   const [danielPct, setDanielPct] = useState(50);
   const [saving, setSaving] = useState(false);
@@ -1045,12 +1150,34 @@ function RecurringModal({
       setTitle(initialData.title);
       setAmount(String(initialData.amount));
       setDay(String(initialData.day_of_month));
-      setPaidBy(String(initialData.paid_by_person_id));
-      setDanielPct(initialData.daniel_pct ?? 50);
+      const isAna =
+        initialData.split_type === 'all_ana' ||
+        initialData.split_type === 'all_silvia' ||
+        initialData.split_type === 'full_ana' ||
+        (initialData.paid_by_person_id === 1 && initialData.daniel_pct === 0);
+      const isDan =
+        initialData.split_type === 'all_daniel' ||
+        initialData.split_type === 'full_daniel' ||
+        (initialData.paid_by_person_id === 2 && initialData.daniel_pct === 100);
+
+      if (isAna) {
+        setScope('ana');
+        setPaidBy(ANA_ID);
+        setDanielPct(0);
+      } else if (isDan) {
+        setScope('daniel');
+        setPaidBy(DANIEL_ID);
+        setDanielPct(100);
+      } else {
+        setScope('shared');
+        setPaidBy(String(initialData.paid_by_person_id || DANIEL_ID));
+        setDanielPct(initialData.daniel_pct ?? 50);
+      }
     } else {
       setTitle('');
       setAmount('');
       setDay('1');
+      setScope('shared');
       setPaidBy(DANIEL_ID);
       setDanielPct(50);
     }
@@ -1060,24 +1187,40 @@ function RecurringModal({
     if (!title.trim() || parseCOP(amount) <= 0) return;
     setSaving(true);
     try {
-      if (initialData) {
-        await updateRecurringExpense(initialData.id, {
-          title: title.trim(),
-          amount: parseCOP(amount),
-          dayOfMonth: parseInt(day || '1', 10) || 1,
-          paidByPersonId: paidBy,
-          splitType: danielPct === 50 ? 'half' : 'proportional',
-          danielPct,
-        });
+      let splitType: SplitType = 'half';
+      let finalPaidBy = paidBy;
+      let finalPct = danielPct;
+      let category = 'Hogar';
+
+      if (scope === 'ana') {
+        splitType = 'all_ana';
+        finalPaidBy = ANA_ID;
+        finalPct = 0;
+        category = 'Personal Silvia';
+      } else if (scope === 'daniel') {
+        splitType = 'all_daniel';
+        finalPaidBy = DANIEL_ID;
+        finalPct = 100;
+        category = 'Personal Daniel';
       } else {
-        await createRecurringExpense({
-          title: title.trim(),
-          amount: parseCOP(amount),
-          dayOfMonth: parseInt(day || '1', 10) || 1,
-          paidByPersonId: paidBy,
-          splitType: danielPct === 50 ? 'half' : 'proportional',
-          danielPct,
-        });
+        splitType = danielPct === 50 ? 'half' : 'proportional';
+        category = 'Vivienda';
+      }
+
+      const payload = {
+        title: title.trim(),
+        amount: parseCOP(amount),
+        dayOfMonth: parseInt(day || '1', 10) || 1,
+        paidByPersonId: finalPaidBy,
+        splitType,
+        danielPct: finalPct,
+        category,
+      };
+
+      if (initialData) {
+        await updateRecurringExpense(initialData.id, payload);
+      } else {
+        await createRecurringExpense(payload);
       }
       await onSaved();
     } finally {
@@ -1098,7 +1241,118 @@ function RecurringModal({
           <Text style={{ fontFamily: 'Inter-Regular', fontSize: 12, color: colors.textSecondary }}>
             {initialData ? 'Edita el valor o condiciones sin tener que borrar la barra del gasto fijo.' : 'Agrega un pago periódico para registrarlo en 1 toque cada mes.'}
           </Text>
-          <TextInput value={title} onChangeText={setTitle} placeholder="Ej. Arriendo Apartamento / Netflix / Luz" placeholderTextColor={colors.textMuted} style={inputStyle} />
+
+          {/* Scope Selector: Compartido vs Silvia vs Daniel */}
+          <View style={{ gap: 4, marginTop: 4 }}>
+            <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 12, color: colors.textSecondary }}>
+              ¿De quién es este gasto fijo?
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              <Pressable
+                onPress={() => {
+                  setScope('shared');
+                  if (danielPct === 0 || danielPct === 100) setDanielPct(50);
+                }}
+                style={{
+                  flex: 1,
+                  paddingVertical: spacing.sm,
+                  paddingHorizontal: 8,
+                  borderRadius: radius.md,
+                  borderWidth: 1.5,
+                  borderColor: scope === 'shared' ? colors.emerald : colors.border,
+                  backgroundColor: scope === 'shared' ? colors.emeraldLight : '#fff',
+                  alignItems: 'center',
+                }}
+              >
+                <Text style={{ fontFamily: 'Inter-Bold', fontSize: 12, color: scope === 'shared' ? colors.emeraldDeep : colors.text }}>
+                  🏡 Compartido
+                </Text>
+                <Text style={{ fontFamily: 'Inter-Regular', fontSize: 10, color: colors.textSecondary, marginTop: 2 }}>
+                  Hogar / Ambos
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  setScope('ana');
+                  setPaidBy(ANA_ID);
+                  setDanielPct(0);
+                }}
+                style={{
+                  flex: 1,
+                  paddingVertical: spacing.sm,
+                  paddingHorizontal: 8,
+                  borderRadius: radius.md,
+                  borderWidth: 1.5,
+                  borderColor: scope === 'ana' ? colors.ana : colors.border,
+                  backgroundColor: scope === 'ana' ? colors.anaLight : '#fff',
+                  alignItems: 'center',
+                }}
+              >
+                <Text style={{ fontFamily: 'Inter-Bold', fontSize: 12, color: scope === 'ana' ? colors.ana : colors.text }}>
+                  🌸 Solo Silvia
+                </Text>
+                <Text style={{ fontFamily: 'Inter-Regular', fontSize: 10, color: colors.textSecondary, marginTop: 2 }}>
+                  Personal (100%)
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  setScope('daniel');
+                  setPaidBy(DANIEL_ID);
+                  setDanielPct(100);
+                }}
+                style={{
+                  flex: 1,
+                  paddingVertical: spacing.sm,
+                  paddingHorizontal: 8,
+                  borderRadius: radius.md,
+                  borderWidth: 1.5,
+                  borderColor: scope === 'daniel' ? colors.daniel : colors.border,
+                  backgroundColor: scope === 'daniel' ? colors.danielLight : '#fff',
+                  alignItems: 'center',
+                }}
+              >
+                <Text style={{ fontFamily: 'Inter-Bold', fontSize: 12, color: scope === 'daniel' ? colors.daniel : colors.text }}>
+                  🏍️ Solo Daniel
+                </Text>
+                <Text style={{ fontFamily: 'Inter-Regular', fontSize: 10, color: colors.textSecondary, marginTop: 2 }}>
+                  Personal (100%)
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {scope === 'ana' && (
+            <View style={{ backgroundColor: colors.anaLight, padding: spacing.sm + 2, borderRadius: radius.md, borderWidth: 1, borderColor: colors.ana + '33' }}>
+              <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 12, color: colors.ana }}>
+                🌸 Gasto 100% personal de Silvia (ej. Plan Movistar)
+              </Text>
+              <Text style={{ fontFamily: 'Inter-Regular', fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>
+                Saldrá de la cuenta de Silvia y <Text style={{ fontFamily: 'Inter-SemiBold', color: colors.text }}>NO generará deuda con Daniel</Text> ni afectará su balance.
+              </Text>
+            </View>
+          )}
+
+          {scope === 'daniel' && (
+            <View style={{ backgroundColor: colors.danielLight, padding: spacing.sm + 2, borderRadius: radius.md, borderWidth: 1, borderColor: colors.daniel + '33' }}>
+              <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 12, color: colors.daniel }}>
+                🏍️ Gasto 100% personal de Daniel (ej. Cuota moto, tarjeta de crédito)
+              </Text>
+              <Text style={{ fontFamily: 'Inter-Regular', fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>
+                Saldrá de la cuenta de Daniel y <Text style={{ fontFamily: 'Inter-SemiBold', color: colors.text }}>NO generará deuda con Silvia</Text> ni afectará su balance.
+              </Text>
+            </View>
+          )}
+
+          <TextInput
+            value={title}
+            onChangeText={setTitle}
+            placeholder={scope === 'ana' ? 'Ej. Plan Celular Movistar Silvia' : scope === 'daniel' ? 'Ej. Cuota Moto / Tarjeta Crédito' : 'Ej. Arriendo Apartamento / Internet Hogar'}
+            placeholderTextColor={colors.textMuted}
+            style={inputStyle}
+          />
           <TextInput
             value={amount ? formatCOP(parseCOP(amount)) : ''}
             onChangeText={(t) => setAmount(String(parseCOP(t)))}
@@ -1108,16 +1362,24 @@ function RecurringModal({
             style={[inputStyle, { fontFamily: 'Inter-Bold', fontSize: 16 }]}
           />
           <TextInput value={day} onChangeText={setDay} placeholder="Día de pago del mes (1-31)" keyboardType="numeric" style={inputStyle} />
-          <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-            {PERSON_LIST.map((p) => (
-              <Chip key={p.id} label={`Paga ${p.name}`} selected={paidBy === p.id} onPress={() => setPaidBy(p.id)} color={p.color} />
-            ))}
-          </View>
-          <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
-            {[50, 60, 70, 80, 85, 40].map((pct) => (
-              <Chip key={pct} label={`${pct}% D / ${100 - pct}% S`} selected={danielPct === pct} onPress={() => setDanielPct(pct)} />
-            ))}
-          </View>
+
+          {scope === 'shared' && (
+            <View style={{ gap: 6 }}>
+              <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 12, color: colors.textSecondary }}>¿Quién paga este gasto compartido?</Text>
+              <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                {PERSON_LIST.map((p) => (
+                  <Chip key={p.id} label={`Paga ${p.name}`} selected={paidBy === p.id} onPress={() => setPaidBy(p.id)} color={p.color} />
+                ))}
+              </View>
+              <Text style={{ fontFamily: 'Inter-SemiBold', fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>División entre los dos</Text>
+              <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+                {[50, 60, 70, 80, 85, 40].map((pct) => (
+                  <Chip key={pct} label={`${pct}% D / ${100 - pct}% S`} selected={danielPct === pct} onPress={() => setDanielPct(pct)} />
+                ))}
+              </View>
+            </View>
+          )}
+
           <Button label={saving ? 'Guardando...' : initialData ? 'Guardar cambios' : 'Guardar gasto fijo'} onPress={handleSave} fullWidth disabled={saving} />
         </View>
       </View>
